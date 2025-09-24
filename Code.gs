@@ -47,7 +47,7 @@ function getPrimaryFromConfigSchools_() {
     const ss = SpreadsheetApp.openByUrl(CONFIG_SHEET_URL);
     const sh = ss.getSheetByName('Schools');
     if (!sh) {
-      Logger.log('[PrimaryResolve] CONFIG.Schools not found.');
+      logHelper('CONFIG.Schools not found.');
       return '';
     }
     const values = sh.getDataRange().getValues();
@@ -81,7 +81,7 @@ function getPrimaryFromConfigSchools_() {
         if (!url) continue;
         const dom = iDomain>=0 ? String(values[r][iDomain]||'').toLowerCase() : '';
         if (dom && dom===myDomain) {
-          Logger.log('[PrimaryResolve] Using domain-matched primary: ' + url);
+          logHelper('Using domain-matched primary: ' + url);
           return url;
         }
       }
@@ -92,7 +92,7 @@ function getPrimaryFromConfigSchools_() {
       return firstNonEmpty;
     }
   } catch (e) {
-  logHelper('Schools resolve failed: ' + (e && e.message ? e.message : e));
+  handleError_(e, 'Schools resolve failed');
   }
   return '';
 }
@@ -119,7 +119,7 @@ function ensurePrimaryWorkbookInCtx_(ctx) {
       Logger.log('[PrimaryResolve] Primary workbook in ctx (pre-set): ' + ctx.dataSheetUrl);
     }
   } catch (e) {
-    logHelper('ensurePrimaryWorkbookInCtx_ error: ' + (e && e.message ? e.message : e));
+    handleError_(e, 'ensurePrimaryWorkbookInCtx_');
   }
 }
 
@@ -269,7 +269,7 @@ page = (rawPage ? rawPage.toLowerCase().trim().replace(/\.$/, '') : page);
         scriptUrl = ScriptApp.getService().getUrl() || '';
       }
     } catch (eUrl) {
-      Logger.log('[doGet] scriptUrl resolution error: ' + (eUrl && eUrl.message ? eUrl.message : eUrl));
+      handleError_(eUrl, 'scriptUrl resolution');
     }
     logHelper('doGet triggered – Code version: v5');
     logHelper('Project Script ID: ' + (typeof ScriptApp !== 'undefined' && ScriptApp.getScriptId ? ScriptApp.getScriptId() : 'n/a'));
@@ -329,19 +329,19 @@ if (page === 'login') {
     encodeURIComponent(scriptUrl + '?page=login&clearCache=true&forcePick=1' + authuserQS);
 
   let canonicalBase = '';
-  try { canonicalBase = getWebAppBase(); } catch (_) {}
+  try { canonicalBase = getWebAppBase(); } catch (e) { handleError_(e, 'getWebAppBase'); }
 
   // ✅ NEW (Patch C): if a school is explicitly provided, remember it immediately
-  try {
-    if (e && e.parameter && e.parameter.school) {
-      var em = (Session.getActiveUser() && Session.getActiveUser().getEmail()) || '';
-      if (em) {
-        PropertiesService.getUserProperties()
-          .setProperty('lastSchoolKey:' + em, String(e.parameter.school).trim());
-        Logger.log('[Login] captured school=' + e.parameter.school);
-      }
+   try {
+  if (e && e.parameter && e.parameter.school) {
+    var em = (Session.getActiveUser() && Session.getActiveUser().getEmail()) || '';
+    if (em) {
+      PropertiesService.getUserProperties()
+        .setProperty('lastSchoolKey:' + em, String(e.parameter.school).trim());
+      logHelper('Login captured school=' + e.parameter.school);
     }
-  } catch (_) {}
+  }
+} catch (e) { handleError_(e, 'Login school capture'); }
 
   // ✅ Give Login.html the same variables Logout.html receives
   const redirect = signinUrl;
@@ -369,13 +369,13 @@ if (page === 'logout') {
     cache.remove('userCtx:unknown');
     Logger.log('[Logout] Cache cleared for: ' + (em || 'unknown'));
   } catch (e1) {
-    Logger.log('[Logout] Cache clear error: ' + (e1 && e1.message ? e1.message : e1));
+    handleError_(e1, 'Logout Cache clear');
   }
 
   // 2) Use the exact deployment URL already resolved earlier in doGet
   //    (you have `scriptUrl` defined above this block in your doGet)
   var loginSelf = (scriptUrl || '');
-  try { loginSelf = (loginSelf.split('?')[0] || '') + '?page=login&clearCache=true&forcePick=1'; } catch (_) {}
+  try { loginSelf = (loginSelf.split('?')[0] || '') + '?page=login&clearCache=true&forcePick=1'; } catch (e) { handleError_(e, 'Login self-resolution'); }
 
   Logger.log('[Logout] rendering login directly (no redirect). loginSelf=' + loginSelf);
 
@@ -396,16 +396,16 @@ if (page === 'logout') {
     // ──────────────────────────────────────────────────────────────
     if (!page && tok) page = 'parent';
     if (!page) page = 'home';
-    Logger.log('Page parameter (raw): ' + rawPage);
-    Logger.log('Page parameter (resolved): ' + page);
+    logHelper('Page parameter (raw): ' + rawPage);
+    logHelper('Page parameter (resolved): ' + page);
 
         // 5) Build ctx ONCE (merge with trusted URL values from CURRENT request)
-Logger.log('[doGet] Fetching user context…');
+logHelper('Fetching user context…');
 // ✅ FIX: Capture trusted values from CURRENT request parameters, NOT from stale 'ctx'
 var _trustedSchool = (params.school) ? String(params.school) : '';
 var _trustedAu     = (params.authuser) ? String(params.authuser) : '';
 ctx = getUserContext_(e);  // get fresh context from your store
-Logger.log('[doGet] ctx (fresh)=' + JSON.stringify(ctx));
+logHelper('ctx (fresh)=' + JSON.stringify(ctx));
 // Re-apply trusted URL values so we don't lose them
 if (_trustedSchool) ctx.selectedSchoolKey = _trustedSchool;
 if (_trustedAu)     ctx.authuser          = _trustedAu;
@@ -413,7 +413,7 @@ if (_trustedAu)     ctx.authuser          = _trustedAu;
     ensurePrimaryWorkbookInCtx_(ctx);
 
     ctx = ensureScriptUrlOnCtx_(ctx);
-Logger.log('[doGet] final scriptUrl=' + ctx.scriptUrl);
+logHelper('final scriptUrl=' + ctx.scriptUrl);
 
         // 🔑 Ensure ctx.selectedSchoolKey is always resolved and remembered (without wiping a good value)
 var __preKey = ctx && ctx.selectedSchoolKey ? String(ctx.selectedSchoolKey) : '';
@@ -439,7 +439,7 @@ if (page === 'incidents') {
   // If both school and authuser are in the URL, assume the user is authenticated
   // This is safe because the Home page (which requires full auth) generated the link.
   if (hasSchool && hasAuthUser) {
-    Logger.log('Incognito mode detected: trusting URL params for authentication.');
+    logHelper('Incognito mode detected: trusting URL params for authentication.');
     ctx.authenticated = true;
     // Optional: Log the trusted user for auditing
     Logger.log('Trusted authuser: ' + params.authuser);
@@ -447,7 +447,7 @@ if (page === 'incidents') {
 }
 
 if ((page === 'home' || page === 'incidents' || page === 'report' || page === 'csv') && !ctx.authenticated) {
-  Logger.log('Not authenticated → rendering LOGIN instead of ' + page.toUpperCase());
+  logHelper('Not authenticated → rendering LOGIN instead of ' + page.toUpperCase());
   const authuserQS = (e && e.parameter && e.parameter.authuser)
     ? `&authuser=${encodeURIComponent(e.parameter.authuser)}`
     : '';
@@ -473,19 +473,19 @@ if ((page === 'home' || page === 'incidents' || page === 'report' || page === 'c
 // ──────────────────────────────────────────────────────────────
 if (page === 'incidents') {
   const opts = getFiltersFromParams_(e);
-  Logger.log('[Incidents] filters=%s', JSON.stringify(opts));
+  logHelper('Incidents filters=' + JSON.stringify(opts));
   Logger.log('[Router] calling showIncidentsPage');
 
   // ✅ Ensure we pass a clean absolute base to the template (no query)
   ctx.scriptUrl = (ctx && ctx.scriptUrl) || (ScriptApp.getService().getUrl() || '').split('?')[0];
-  Logger.log('[Incidents] ctx.scriptUrl=%s', ctx.scriptUrl || '(blank)');
+  logHelper('ctx.scriptUrl=' + (ctx.scriptUrl || '(blank)'));
 
   try {
     // If you have a custom renderer, use it; otherwise the try/catch falls back.
     return showIncidentsPage(ctx.scriptUrl, ctx, opts)
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   } catch (errInc) {
-    Logger.log('[Incidents Fallback] Error: ' + (errInc && errInc.message ? errInc.message : errInc));
+    handleError_(errInc, 'Incidents Fallback');
 
     // ✅ Fallback renders your Incidents.html with *exact* names your template needs
 const t = HtmlService.createTemplateFromFile('Incidents');

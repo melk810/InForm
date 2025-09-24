@@ -1,5 +1,3 @@
-// === Masking helpers ===
-// Mask long secrets/tokens in logs (e.g., ABCD…WXYZ)
 function maskToken_(tok) {
   var s = String(tok || '');
   if (!s) return '';
@@ -9,4 +7,10 @@ function maskToken_(tok) {
 
 function logHelper(message) {
   Logger.log('[App] ' + message);
+}
+
+function handleError_(error, context) {
+  var message = error && error.message ? error.message : error;
+  logHelper(context + ' error: ' + message);
+  return message;
 }
