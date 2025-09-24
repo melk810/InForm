@@ -1,0 +1,55 @@
+<!-- PAGE: Logout -->
+<!DOCTYPE html>
+<html>
+<head>
+  <?!= include('Styles'); ?>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>InForm – Logging Out</title>
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0"/>
+  <meta http-equiv="Pragma" content="no-cache"/>
+  <meta http-equiv="Expires" content="0"/>
+
+  <!-- ✅ Quote + HTML-escape the URL inside content -->
+  <meta http-equiv="refresh" content="<?= '0; url=' + redirect.replace(/&/g,'&amp;') ?>">
+
+  <style>
+    body{font-family:Arial,sans-serif;text-align:center;padding:20px;background:#f0f4f8;color:#333}
+    .container{max-width:640px;margin:0 auto;background:#fff;padding:30px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.1)}
+    .btn{display:inline-block;margin-top:16px;padding:12px 18px;font-size:16px;color:#4285f4;background:#fff;border:2px solid #4285f4;border-radius:10px;text-decoration:none}
+    .btn:hover{background:#e6f0ff}
+    .muted{color:#777;margin-top:12px;font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>InForm – Logging Out</h2>
+    <p>You have been logged out of the InForm app.</p>
+
+    <!-- ✅ HTML-escape the href for robust fallback -->
+    <a class="btn" href="<?= redirect.replace(/&/g,'&amp;') ?>" target="_top" rel="noopener">Continue to Sign In</a>
+
+    <div class="muted">
+      Optional: fully sign out of your Google account
+      <a href="https://accounts.google.com/Logout" target="_blank" rel="noopener">here</a>.
+    </div>
+
+    <!-- Non-JS fallback: visible link -->
+    <noscript>
+      <p><a href="<?= redirect.replace(/&/g,'&amp;') ?>" target="_top" rel="noopener">Continue</a></p>
+    </noscript>
+  </div>
+
+  <script>
+    (function(){
+      var r = <?= safeRedirect ?>;
+      try { window.top.location.replace(r); }
+      catch (e1) {
+        try { window.parent.location.replace(r); }
+        catch (e2) { window.location.replace(r); }
+      }
+    })();
+  </script>
+  <?!= include('Footer'); ?>
+</body>
+</html>

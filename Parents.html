@@ -1,0 +1,150 @@
+<!-- PAGE: Parents -->
+<!DOCTYPE html>
+<html>
+<head>
+  <?!= include('Styles'); ?>   <!-- put this FIRST in <head> -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parent Portal – InForm</title>
+  <style>
+    body{font-family:Arial,sans-serif;padding:16px;background:#f0f4f8;color:#333;margin:0}
+    .container{max-width:960px;margin:0 auto;background:#fff;padding:18px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.1)}
+    .hdr{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+    .school{color: <?= schoolColor ?>;font-weight:600}
+    .chip{background:#eef4ff;border:1px solid #d6e2ff;color:#2f5bd1;border-radius:999px;padding:6px 10px;font-size:12px}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .btn{display:inline-block;padding:8px 12px;border:2px solid <?= schoolColor ?>;border-radius:8px;color: <?= schoolColor ?>;text-decoration:none;font-weight:600;background:#fff;cursor:pointer}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    /* make "primary" look filled */
+    .btn.primary{background: <?= schoolColor ?>; color:#fff}
+    .muted{color:#666;font-size:12px}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{border:1px solid #ddd;padding:8px;text-align:left}
+    th{background: <?= schoolColor ?>;color:#fff}
+  </style>
+  <script>
+    const TOKEN = '<?= token ?>';
+    const BASE  = '<?= baseUrl ?>';
+
+    function changeDays(sel){
+      const v = sel.value || '30';
+      window.location.href = BASE + '?page=parent&tok=' + encodeURIComponent(TOKEN) + '&days=' + encodeURIComponent(v);
+    }
+
+    function ack(rowIndex, btn){
+  if (!confirm('Confirm: I have read this incident.')) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  // Fallback route if google.script.run is unavailable or fails
+  function fallback(){
+    var url = '<?= baseUrl ?>'
+            + '?page=ack'
+            + '&tok=' + encodeURIComponent('<?= token ?>')
+            + '&row=' + encodeURIComponent(rowIndex);
+    try { window.top.location.href = url; }
+    catch (_) { window.location.href = url; }
+  }
+
+  try {
+    if (typeof google !== 'undefined' && google.script && google.script.run){
+      google.script.run
+        .withSuccessHandler(function(res){
+          if (res && res.ok){
+            btn.outerHTML = '<span class="chip">Acknowledged</span>';
+          } else {
+            // Try server route so the parent still succeeds
+            fallback();
+          }
+        })
+        .withFailureHandler(function(_err){
+          // Network/sandbox issue – use server route
+          fallback();
+        })
+        .parentAcknowledgeIncident_('<?= token ?>', rowIndex);
+
+      // Safety timer: if nothing happens in 4s, use fallback
+      setTimeout(function(){
+        if (!btn.isConnected) return; // already replaced
+        if (btn.disabled && btn.textContent === 'Saving...') fallback();
+      }, 4000);
+    } else {
+      fallback();
+    }
+  } catch (_e){
+    fallback();
+  }
+}
+
+    // Optional helper if you ever keep a <button onclick="downloadPdf()">
+    function downloadPdf(){
+      var url = '<?= downloadUrl ?>' || (
+        BASE + '?page=parent_dl'
+        + '&tok=' + encodeURIComponent('<?= token ?>')
+        + '&days=' + encodeURIComponent('<?= days ?>')
+        + '&limit=200'
+      );
+      try { window.top.location.href = url; }
+      catch (_) { window.location.href = url; }
+    }
+  </script>
+</head>
+<body>
+  <div class="container">
+    <div class="hdr">
+      <div>
+        <div class="school"><?= schoolName ?></div>
+        <div class="muted">Parent Portal</div>
+      </div>
+      <div class="row">
+        <label class="muted">Show last</label>
+        <select onchange="changeDays(this)">
+          <? var opts=[7,14,30,60,90]; for (var i=0;i<opts.length;i++){ var d=opts[i]; ?>
+            <option value="<?= d ?>" <?= (parseInt(days,10)===d?'selected':'') ?>><?= d ?> days</option>
+          <? } ?>
+        </select>
+        <!-- Uses server-built downloadUrl that points to ?page=parent_dl -->
+        <a class="btn primary" href="<?= downloadUrl ?>" target="_top" aria-label="Download learner PDF">⬇️ Download PDF</a>
+        <!-- If you prefer a button instead, keep this and it will call the same URL:
+        <button class="btn primary" onclick="downloadPdf()">⬇️ Download Learner PDF</button>
+        -->
+      </div>
+    </div>
+
+    <div style="margin-top:8px">
+      <span class="chip">Learner: <?= learner ?></span>
+      <span class="chip">Grade: <?= grade ?></span>
+    </div>
+
+    <? if (incidents && incidents.length) { ?>
+      <table>
+        <tr>
+          <th>Date</th>
+          <th>Subject</th>
+          <th>Teacher</th>
+          <th>Nature</th>
+          <th>Acknowledge</th>
+        </tr>
+        <? for (var i=0;i<incidents.length;i++){ var it=incidents[i]; ?>
+          <tr>
+            <td><?= it.date ?></td>
+            <td><?= it.subject ?></td>
+            <td><?= it.teacher ?></td>
+            <td><?= it.nature ?></td>
+            <td>
+              <? if (it.acknowledged) { ?>
+                <span class="chip">Acknowledged</span>
+              <? } else { ?>
+                <button class="btn" onclick="ack(<?= it.rowIndex ?>, this)">Acknowledge</button>
+              <? } ?>
+            </td>
+          </tr>
+        <? } ?>
+      </table>
+    <? } else { ?>
+      <p style="margin-top:16px" class="muted">No incidents in the selected window.</p>
+    <? } ?>
+  </div>
+  
+</body>
+</html>

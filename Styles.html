@@ -1,0 +1,42 @@
+<base target="_top">
+
+<!-- Global favicon (school logo if present, else InForm default) -->
+<link rel="icon"
+      href="<?= (typeof ctx !== 'undefined' && ctx && ctx.schoolLogo)
+                ? ctx.schoolLogo
+                : 'https://drive.google.com/thumbnail?authuser=0&sz=w64&id=1djm8Sj95JkgxTh6fgGjjqnBD9q-bNdnc' ?>"
+      type="image/png">
+
+<style>
+  /* Footer-only, safe, minimal (no global resets, no flex layout) */
+  #inform-footer {
+    position: fixed;      /* sticks to bottom even on short pages */
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 999;         /* above page content if needed */
+    background: #f7f7f8;
+    border-top: 1px solid #e9eaed;
+    text-align: center;   /* force center even if a parent is right-aligned */
+    padding: 10px 12px;
+    font: 13px/1.4 Arial, sans-serif;
+    color: #5f6368;
+    box-sizing: border-box;
+  }
+  #inform-footer .inform-footer-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 8px;
+  }
+  #inform-footer a {
+    color: #1a73e8;
+    text-decoration: none;
+  }
+  #inform-footer a:hover { text-decoration: underline; }
+
+  /* Optional: avoid footer covering bottom content on scroll-heavy pages */
+  body { 
+    /* add space equal to footer height so content doesn’t hide underneath */
+    padding-bottom: 44px; 
+  }
+</style>

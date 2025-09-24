@@ -1,0 +1,288 @@
+<!-- PAGE: Login -->
+<!DOCTYPE html>
+<html>
+<head>
+  <?!= include('Styles'); ?>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Login – InForm</title>
+  <style>
+    :root { --brand:#1a73e8; }
+    html, body { height: 100%; }
+    body {
+      font-family: Arial, sans-serif;
+      background:#f6f8fb;
+      color:#222;
+      margin:0;
+      display:flex; align-items:center; justify-content:center;
+      padding:24px;
+    }
+    .card {
+      width:100%; max-width:520px;
+      background:#fff; border-radius:16px;
+      box-shadow:0 6px 30px rgba(0,0,0,.07);
+      padding:24px 22px;
+    }
+    .brand { text-align:center; margin-bottom:12px; }
+    .brand img { max-height:72px; display:block; margin:0 auto 6px; }
+    .brand h1 { margin:0; font-size:18px; font-weight:600; color:#111; }
+    .label { font-size:13px; color:#555; margin:16px 0 6px; display:block; }
+    select, input[type="email"] {
+      width:100%; padding:12px 14px; font-size:14px;
+      border:1px solid #d9dee6; border-radius:12px; background:#fbfcfe;
+      outline:none;
+    }
+    button {
+      width:100%; margin-top:14px; padding:12px 14px; font-size:15px;
+      border:none; border-radius:12px; cursor:pointer;
+      background:var(--brand); color:#fff;
+    }
+    button:disabled { opacity:.6; cursor:not-allowed; }
+    .hint { font-size:12px; color:#666; margin-top:8px; text-align:center; }
+    .msg { margin-top:10px; font-size:13px; text-align:center; }
+    .msg.error { color:#a31111; }
+    .msg.ok { color:#106a3a; }
+    .spinner {
+      width:22px; height:22px; border-radius:50%;
+      border:3px solid #e6eaf1; border-top-color: var(--brand);
+      animation: spin 1s linear infinite; display:inline-block;
+      vertical-align:middle; margin-right:8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display:none !important; }
+  </style>
+
+  <!-- (Optional) server-injected baseUrl from doGet -->
+  <? var __BASE = (typeof baseUrl !== 'undefined') ? baseUrl : ''; ?>
+  <script>
+    window.__BASE_URL = '<?= __BASE ?>';
+    // 🔹 Set your fixed InForm logo URL here:
+    const DEFAULT_LOGO = 'https://drive.google.com/thumbnail?authuser=0&sz=w300&id=1djm8Sj95JkgxTh6fgGjjqnBD9q-bNdnc';
+  </script>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <img id="brandLogo" src="" alt="InForm">
+      <h1>InForm</h1>
+    </div>
+
+    <label for="schoolSelect" class="label">Choose your school</label>
+    <select id="schoolSelect">
+      <option value="">— Select —</option>
+    </select>
+
+    <div id="emailWrap" class="hidden">
+      <label for="emailInput" class="label">Your email address</label>
+      <input id="emailInput" type="email" placeholder="name@school.org" />
+      <button id="continueBtn">Continue</button>
+    </div>
+
+    <div id="msg" class="msg"></div>
+    <div class="hint" id="hint"></div>
+  </div>
+
+  <script>
+    // ---------- tiny client tracer (console + server) ----------
+    function trace(label, data) {
+      try { console.log('[Login]', label, data || ''); } catch {}
+      try { google.script.run.doClientLog('[Login] ' + label, JSON.stringify(data || {})); } catch {}
+    }
+
+    // ---------- small helpers ----------
+    function baseExecUrl() {
+      // Use injected base if present
+      var injected = (window.__BASE_URL || '').trim();
+      if (injected) return injected;
+
+      // SAFE: only read current frame's location (avoid window.top in iframes)
+      var href = '';
+      try { href = window.location && window.location.href ? window.location.href : ''; } catch(e) {
+        trace('baseExecUrl:error', String(e));
+      }
+      var qpos = href.indexOf('?');
+      return qpos > -1 ? href.substring(0, qpos) : href;
+    }
+    function show(el, on) { el.classList.toggle('hidden', !on); }
+    function setMsg(text, type) {
+      var m = document.getElementById('msg');
+      m.className = 'msg' + (type ? ' ' + type : '');
+      m.textContent = text || '';
+    }
+    function getParam(name) {
+      try { return new URL(window.location.href).searchParams.get(name) || ''; }
+      catch { return ''; }
+    }
+
+    // ---------- elements ----------
+    var $school = document.getElementById('schoolSelect');
+    var $emailWrap = document.getElementById('emailWrap');
+    var $email = document.getElementById('emailInput');
+    var $btn = document.getElementById('continueBtn');
+    var $hint = document.getElementById('hint');
+    var $logo = document.getElementById('brandLogo');
+
+    // ---------- init ----------
+    (function init() {
+      trace('init:start');
+      // Always show the InForm logo on load
+      $logo.src = DEFAULT_LOGO;
+
+      // If you ever add auto-redirects to Login, this flag lets Logout force the chooser.
+      var mustPick = getParam('forcePick') === '1';
+      trace('forcePick', { mustPick });
+
+      // Load schools from Config → Schools (Active=Y)
+      google.script.run
+        .withSuccessHandler(function(list){
+          trace('listActiveSchools:success', { count: Array.isArray(list) ? list.length : 0 });
+          if (!Array.isArray(list) || !list.length) {
+            setMsg('No schools found in Config.', 'error');
+            return;
+          }
+          list.forEach(function(s) {
+            var o = document.createElement('option');
+            o.value = s.key || s.name || '';
+            o.textContent = s.name || s.key || '(Unnamed)';
+            if (s.logo)  o.dataset.logo = s.logo;
+            if (s.color) o.dataset.color = s.color;
+            $school.appendChild(o);
+          });
+          setMsg('');
+          // If you later add any auto-jump logic, gate it behind !mustPick.
+        })
+        .withFailureHandler(function(err){
+          trace('listActiveSchools:failure', { message: err && err.message });
+          setMsg('Could not load schools: ' + (err && err.message ? err.message : 'unknown'), 'error');
+        })
+        .listActiveSchools(); // CHANGED: use listActiveSchools()
+
+      // Fetch basic context to know who is signed in (for hint)
+      google.script.run
+        .withSuccessHandler(function(ctx){
+          trace('getContext:success', { email: ctx && ctx.email });
+          if (ctx && ctx.email) $hint.textContent = 'Signed in as ' + ctx.email;
+        })
+        .withFailureHandler(function(err){
+          trace('getContext:failure', { message: err && err.message });
+        })
+        .getContext();
+
+      // events
+      $school.addEventListener('change', onSchoolChange);
+      $btn.addEventListener('click', onContinue);
+
+      trace('init:end');
+    })();
+
+    function onSchoolChange() {
+      var has = !!$school.value;
+      trace('school:change', { selected: $school.value });
+      show($emailWrap, has);
+      setMsg('');
+
+      // Swap logo: school logo if available; else InForm default
+      var opt = $school.options[$school.selectedIndex];
+      if (opt && opt.dataset && opt.dataset.logo) {
+        $logo.src = opt.dataset.logo;
+      } else {
+        $logo.src = DEFAULT_LOGO;
+      }
+
+      // Update brand color or reset to default blue
+      if (opt && opt.dataset && opt.dataset.color) {
+        document.documentElement.style.setProperty('--brand', opt.dataset.color);
+      } else {
+        document.documentElement.style.setProperty('--brand', '#1a73e8');
+      }
+    }
+
+    // ✅ Minimal, canonical Continue handler (with tracing)
+    function onContinue() {
+      setMsg('');
+      var key = ($school.value || '').trim();
+      var email = ($email.value || '').trim().toLowerCase();
+
+      trace('continue:clicked', { key: key, email: email });
+
+      if (!key)   { setMsg('Please choose your school.', 'error'); trace('continue:missing-school'); return; }
+      if (!email) { setMsg('Please enter your email.', 'error');   trace('continue:missing-email');  return; }
+
+      // Button busy state
+      $btn.disabled = true;
+      var prevTxt = $btn.textContent;
+      $btn.textContent = 'Checking…';
+
+      // 🔎 Server-side validation against the selected school's PRIMARY → Staff
+      google.script.run
+        .withSuccessHandler(function(res){
+          trace('validateEmailForSchool:success', res);
+          $btn.disabled = false; $btn.textContent = prevTxt;
+
+          if (!res || !res.ok) {
+            setMsg((res && res.reason) ? res.reason : 'Email not authorized for this school.', 'error');
+            return;
+          }
+
+          if (res.role) setMsg('Welcome ' + res.role + ' – redirecting…', 'ok');
+          redirectToHome(key, email);
+        })
+        .withFailureHandler(function(err){
+          trace('validateEmailForSchool:failure', { message: err && err.message });
+          $btn.disabled = false; $btn.textContent = prevTxt;
+          setMsg('Validation failed: ' + (err && err.message ? err.message : 'unknown'), 'error');
+        })
+        .validateEmailForSchool(key, email);
+    }
+
+    // ✅ Build target URL and navigate (no window.top reads/writes)
+    function redirectToHome(key, email) {
+      var url = baseExecUrl();
+      var target = '';
+      try {
+        var u = new URL(url);
+        var authuser = getParam('authuser');
+        u.searchParams.set('page', 'home');
+        u.searchParams.set('school', key);
+        u.searchParams.set('email', email.toLowerCase());
+        u.searchParams.set('clearCache', 'true');
+        if (authuser) u.searchParams.set('authuser', authuser);
+        u.searchParams.set('rid', String(Date.now()));
+        target = u.toString();
+      } catch (err) {
+        var qs = '?page=home'
+          + '&school=' + encodeURIComponent(key)
+          + '&email='  + encodeURIComponent(email.toLowerCase())
+          + '&clearCache=true';
+        var authuser2 = getParam('authuser');
+        if (authuser2) qs += '&authuser=' + encodeURIComponent(authuser2);
+        target = url + qs;
+      }
+
+      trace('redirect:target', { target: target });
+
+      // 1) Always render a real link the user can click (guaranteed user activation)
+      var m = document.getElementById('msg');
+      m.className = 'msg ok';
+      m.innerHTML = 'Welcome – ready. <a id="goHomeLink" href="' + target + '" target="_top" rel="noreferrer">Continue to Home →</a>';
+
+      // 2) Try auto navigation; if the sandbox blocks it, the link still works
+      try {
+        var a = document.createElement('a');
+        a.href = target; a.target = '_top'; a.rel = 'noreferrer'; a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        trace('redirect:a.click');
+      } catch (e) {
+        trace('redirect:a.click:error', String(e));
+      }
+      // Small delay, then try a standard navigation
+      setTimeout(function(){
+        try { window.location.assign(target); trace('redirect:assign'); }
+        catch (e) { trace('redirect:assign:error', String(e)); }
+      }, 50);
+    }
+  </script>
+  <?!= include('Footer'); ?>
+</body>
+</html>

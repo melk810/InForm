@@ -1,0 +1,567 @@
+<!-- PAGE: Incidents (BUILD: <?= typeof BUILD !== 'undefined' ? BUILD : '2' ?>) -->
+<!DOCTYPE html>
+<html>
+<head>
+  <?!= include('Styles'); ?>
+  <title>InForm – Incidents</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- ✅ Default all links to escape iframes unless explicitly overridden -->
+  <? /* ░░░ SAFETY DEFAULTS (hoist-safe; do NOT redeclare the same names) ░░░ */ ?>
+<?
+
+// Read existing globals, then assign back WITHOUT `var` to avoid shadowing/hoisting.
+(function () {
+  var _schoolName  = (typeof schoolName  !== 'undefined') ? schoolName  : 'School';
+  var _schoolLogo  = (typeof schoolLogo  !== 'undefined') ? schoolLogo  : '';
+  var _schoolColor = (typeof schoolColor !== 'undefined') ? schoolColor : '#1a73e8';
+  // scriptUrl: allow ctx.scriptUrl as a fallback
+  var _scriptUrl   = (typeof scriptUrl !== 'undefined' && scriptUrl)
+                     ? scriptUrl
+                     : ((typeof ctx !== 'undefined' && ctx && ctx.scriptUrl) ? ctx.scriptUrl : '');
+  
+  // selectedSchoolKey baked-in safely (also allow ctx.selectedSchoolKey)
+  var _selectedSchoolKey = (typeof selectedSchoolKey !== 'undefined' && selectedSchoolKey)
+                           ? selectedSchoolKey
+                           : ((typeof ctx !== 'undefined' && ctx && ctx.selectedSchoolKey) ? ctx.selectedSchoolKey : '');
+
+  var _filters = (typeof filters !== 'undefined') ? filters : {
+    days: 30, limit: 100, grade: '', subject: '', teacher: '', learner: '', nature: ''
+  };
+
+  var _summary = (typeof summary !== 'undefined') ? summary : {
+    days: (_filters.days || 30),
+    totalInWindow: 0, today: 0, last7: 0, ytdTotal: 0,
+    topSubjects: [], topLearners: [], topNatures: [], byGrade: []
+  };
+
+  var _inc = (typeof incidents !== 'undefined') ? incidents : [];
+
+  // Reassign to the template globals (NO `var` here!)
+  schoolName         = _schoolName;
+  schoolLogo         = _schoolLogo;
+  schoolColor        = _schoolColor;
+  scriptUrl          = _scriptUrl;
+  selectedSchoolKey  = _selectedSchoolKey;
+  filters            = _filters;
+  summary            = _summary;
+  incidents          = Array.isArray(_inc) ? _inc : [];
+})();
+?>
+  <style>
+    body{font-family:Arial,sans-serif;text-align:center;padding:20px;background:#f0f4f8;color:#333;margin:0}
+    .container{max-width:98%;margin:0 auto;background:#fff;padding:24px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.1)}
+    .logo-container{display:flex;align-items:center;justify-content:center;gap:12px;margin:6px 0 6px}
+    .logo-inform-img{width:100px;height:auto}
+    .logo-school{width:56px;height:auto;border-radius:8px;border:1px solid #ddd}
+    .school{color: <?= schoolColor ?>;font-size:16px;margin:2px 0 12px;font-weight:500}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:12px;margin:12px 0}
+    .card{border:1px solid #e6e9ef;border-radius:10px;padding:12px;text-align:left}
+    .card h4{margin:0 0 6px 0;font-size:14px;color:#666}
+    .card .big{font-size:22px;font-weight:700}
+    .list{margin:0;padding-left:16px;text-align:left}
+    .filters{border:1px solid #e6e9ef;border-radius:10px;padding:12px;margin:14px 0;text-align:left}
+    .filters label{display:block;font-size:12px;color:#666;margin-top:8px}
+    .filters input,.filters select{width:100%;padding:8px;border:1px solid #d7dce3;border-radius:8px}
+    .filters .row{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px}
+    .btn{display:inline-block;padding:8px 16px;font-size:14px;font-weight:600;color: <?= schoolColor ?>;background:#fff;border:2px solid <?= schoolColor ?>;border-radius:8px;text-decoration:none;transition:all .2s ease;cursor:pointer;margin:6px}
+    .btn:hover{background:#e6f0ff}
+    table{width:100%;border-collapse:collapse;margin:14px 0;font-size:.9em;table-layout:fixed}
+    th,td{padding:6px;text-align:left;border:1px solid #ddd;word-wrap:break-word}
+    th{background: <?= schoolColor ?>;color:#fff}
+    th:nth-child(1){width:10%}th:nth-child(2){width:16%}th:nth-child(3){width:8%}th:nth-child(4){width:13%}th:nth-child(5){width:15%}th:nth-child(6){width:38%}
+    .muted{color:#666;font-size:12px}
+    .toolbar{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px}
+  </style>
+  
+  <!-- tiny boot breadcrumb so we can see this file rendered + base chosen -->
+  <script>
+    (function(){
+      try {
+        var payload = {
+          page: 'Incidents',
+          hasScriptUrl: !!("<?= (scriptUrl||'') ?>"),
+          scriptUrl: "<?= (scriptUrl||'') ?>",
+          selectedSchoolKey: "<?= (selectedSchoolKey||'') ?>",
+          ts: new Date().toISOString()
+        };
+        if (google && google.script && google.script.run && google.script.run.doClientLog) {
+          google.script.run.doClientLog('[Incidents boot]', JSON.stringify(payload));
+        }
+      } catch (_) {}
+    })();
+  </script>
+</head>
+
+<body>
+  <div class="container">
+    <div class="logo-container">
+      <img src="https://drive.google.com/thumbnail?authuser=0&sz=w300&id=1djm8Sj95JkgxTh6fgGjjqnBD9q-bNdnc" alt="InForm Logo" class="logo-inform-img">
+      <? if (schoolLogo) { ?><img src="<?= schoolLogo ?>" alt="School Logo" class="logo-school"><? } ?>
+    </div>
+    <p class="school"><?= schoolName ?></p>
+    <h3>📈 Summary (last <?= summary.days ?> days)</h3>
+    <div class="grid">
+      <div class="card"><h4>Today</h4><div class="big"><?= summary.today ?></div></div>
+      <div class="card"><h4>Last 7 days</h4><div class="big"><?= summary.last7 ?></div></div>
+      <div class="card"><h4>Total in window</h4><div class="big"><?= summary.totalInWindow ?></div></div>
+      <div class="card"><h4>Year-to-date</h4><div class="big"><?= summary.ytdTotal ?></div></div>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <h4>By Grade (Top 3)</h4>
+        <ul class="list">
+          <? for (var i=0;i<summary.byGrade.length;i++){ var g=summary.byGrade[i]; ?>
+            <li><?= g[0] ?> — <?= g[1] ?></li>
+          <? } ?>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>Top Subjects</h4>
+        <ul class="list">
+          <? for (var i=0;i<summary.topSubjects.length;i++){ var s=summary.topSubjects[i]; ?>
+            <li><?= s[0] ?> — <?= s[1] ?></li>
+          <? } ?>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>Top Learners</h4>
+        <ul class="list">
+          <? for (var i=0;i<summary.topLearners.length;i++){ var l=summary.topLearners[i]; ?>
+            <li><?= l[0] ?> — <?= l[1] ?></li>
+          <? } ?>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>Top Natures</h4>
+        <ul class="list">
+          <? for (var i=0;i<summary.topNatures.length;i++){ var n=summary.topNatures[i]; ?>
+            <li><?= n[0] ?> — <?= n[1] ?></li>
+          <? } ?>
+        </ul>
+      </div>
+    </div>
+    <h3>🔎 Filter Incidents</h3>
+    <!-- ✅ Absolute submit + top-window target -->
+      <form class="filters" method="get" action="<?= scriptUrl ?>" target="_top" onsubmit="return ensureAuthuserInForm(event)">
+      <input type="hidden" name="page" value="incidents">
+      <input type="hidden" name="school" value="<?= selectedSchoolKey ?>">
+      <div class="row">
+        <div>
+          <label>Days</label>
+          <select name="days" id="daysSelect">
+            <? var dayOpts=[7,14,30,90,365]; for (var i=0;i<dayOpts.length;i++){ var d=dayOpts[i]; ?>
+              <option value="<?= d ?>" <?= (parseInt(filters.days,10)===d?'selected':'') ?>><?= d ?></option>
+            <? } ?>
+          </select>
+        </div>
+        <div>
+          <label>Limit</label>
+          <select name="limit">
+            <? var lim=[50,100,200,500]; for (var i=0;i<lim.length;i++){ var L=lim[i]; ?>
+              <option value="<?= L ?>" <?= (parseInt(filters.limit,10)===L?'selected':'') ?>><?= L ?></option>
+            <? } ?>
+          </select>
+        </div>
+        <div>
+          <label>Grade (exact)</label>
+          <input name="grade" value="<?= filters.grade || '' ?>">
+        </div>
+        <div>
+          <label>Subject (contains)</label>
+          <input name="subject" value="<?= filters.subject || '' ?>">
+        </div>
+        <div>
+          <label>Teacher (contains)</label>
+          <input name="teacher" value="<?= filters.teacher || '' ?>">
+        </div>
+        <div>
+          <label>Learner (contains)</label>
+          <input name="learner" value="<?= filters.learner || '' ?>">
+        </div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr;">
+        <div>
+          <label>Nature (contains)</label>
+          <input name="nature" value="<?= filters.nature || '' ?>">
+        </div>
+      </div>
+      <div class="toolbar">
+        <button type="submit" class="btn">Apply Filters</button>
+
+                <!-- ✅ Clear keeps school and authuser -->
+        <a
+          id="btnClear"
+          class="btn"
+          href="<?= scriptUrl ?>?page=incidents&school=<?= encodeURIComponent(selectedSchoolKey||'') ?>&days=30&limit=100"
+          target="_top"
+          rel="noopener noreferrer"
+        >Clear</a>
+
+<script>
+(function () {
+  var a = document.getElementById('btnClear');
+  if (!a) return;
+  var u = new URL(a.href, location.href);
+  // ensure authuser
+  if (!u.searchParams.get('authuser')) {
+    var cur = new URL(location.href);
+    var au = cur.searchParams.get('authuser');
+    u.searchParams.set('authuser', au || '0');
+  }
+  
+  // ensure school
+  if (!u.searchParams.get('school')) {
+    var pageUrl = new URL(location.href);
+    var key =
+      pageUrl.searchParams.get('school') ||
+      (window.localStorage && localStorage.getItem('IFC.schoolKey'));
+    if (key) u.searchParams.set('school', key);
+  }
+  
+  // keep rid fresh
+  u.searchParams.set('rid', String(Date.now()));
+  a.href = u.toString();
+})();
+</script>
+  
+  <a
+  id="btnBackHome"
+  href="<?= (scriptUrl || '?') ?>?page=home<? if (selectedSchoolKey) { ?>&school=<?= encodeURIComponent(selectedSchoolKey) ?><? } ?><? if (typeof ctx !== 'undefined' && ctx.authuser) { ?>&authuser=<?= encodeURIComponent(ctx.authuser) ?><? } ?>&rid=<?= (new Date()).getTime() ?>"
+  class="btn"
+  target="_top"
+  rel="noopener"
+>← Back Home</a>
+
+<script>
+(function () {
+  var a = document.getElementById('btnBackHome');
+  if (!a) return;
+  var u = new URL(a.href, location.href);
+  // ensure authuser
+  if (!u.searchParams.get('authuser')) {
+    var cur = new URL(location.href);
+    var au = cur.searchParams.get('authuser');
+    u.searchParams.set('authuser', au || '0');
+  }
+  // ensure school
+  if (!u.searchParams.get('school')) {
+    var pageUrl = new URL(location.href);
+    var key =
+      pageUrl.searchParams.get('school') ||
+      (window.localStorage && localStorage.getItem('IFC.schoolKey'));
+    if (key) u.searchParams.set('school', key);
+  }
+  // keep rid fresh
+  u.searchParams.set('rid', String(Date.now()));
+  a.href = u.toString();
+})();
+</script>
+     
+        <!-- ✅ PRE-BAKED DOWNLOAD LINKS (school + current filters) -->
+<a class="btn" data-report="pdf" href="...page=report..." target="_blank" rel="noopener">⬇️ Download PDF</a>
+<a class="btn" data-report="csv" href="...page=csv..."   target="_blank" rel="noopener">🧾 Download CSV</a>
+      </div>
+      <div class="muted" style="margin-top:6px;">
+        Showing last <strong><?= filters.days ?></strong> days, up to <strong><?= filters.limit ?></strong> rows.
+        <? if (filters.grade) { ?> | Grade = <strong><?= filters.grade ?></strong><? } ?>
+        <? if (filters.subject) { ?> | Subject ~ “<?= filters.subject ?>”<? } ?>
+        <? if (filters.teacher) { ?> | Teacher ~ “<?= filters.teacher ?>”<? } ?>
+        <? if (filters.learner) { ?> | Learner ~ “<?= filters.learner ?>”<? } ?>
+        <? if (filters.nature)  { ?> | Nature ~ “<?= filters.nature ?>”<? } ?>
+      </div>
+    </form>
+    <h3>📋 Incidents</h3>
+    <? if (incidents && incidents.length > 0) { ?>
+      <table>
+        <tr>
+          <th>Date</th>
+          <th>Learner</th>
+          <th>Grade</th>
+          <th>Subject</th>
+          <th>Teacher</th>
+          <th>Nature (combined)</th>
+        </tr>
+        <? for (var i = 0; i < incidents.length; i++) { var inc = incidents[i]; ?>
+          <tr>
+            <td><?= inc[0] ?></td>
+            <td><?= inc[1] ?></td>
+            <td><?= inc[2] ?></td>
+            <td><?= inc[3] ?></td>
+            <td><?= inc[4] ?></td>
+            <td><?= inc[5] ?></td>
+          </tr>
+        <? } ?>
+      </table>
+    <? } else { ?>
+      <p style="padding:20px;color:#777;">No incidents match your filters.</p>
+    <? } ?>
+  </div>
+ 
+ <script>
+(function () {
+  // 1) Robust school key: baked OR URL param
+  var BAKED_SCHOOL = "<?= selectedSchoolKey ?>";
+  var URL_SCHOOL = (function(){
+    try { return new URL(location.href).searchParams.get('school') || ''; } catch(_) { return ''; }
+  })();
+  var SCHOOL = BAKED_SCHOOL || URL_SCHOOL;
+
+  // 1b) Keep the signed-in Google account (authuser) if present
+  var AUTH = (function(){
+    try { return new URL(location.href).searchParams.get('authuser') || ''; } catch(_) { return ''; }
+  })();
+
+  // 2) Absolute base (/exec) – use server-provided scriptUrl when present
+  var BASE_ABS = (typeof scriptUrl !== 'undefined' && scriptUrl)
+                 ? String(scriptUrl).split('?')[0]
+                 : (location.href.split('?')[0] || '');
+  var base = new URL(BASE_ABS);
+
+  // 3) URL builder that ALWAYS keeps SCHOOL (+ authuser if present)
+  function makeUrl(page, extra) {
+    var u = new URL(base.toString());
+    var sp = new URLSearchParams();
+    if (SCHOOL) sp.set('school', SCHOOL);
+    if (page)   sp.set('page', page);
+    if (extra) {
+      Object.keys(extra).forEach(function(k){
+        var v = extra[k];
+        if (v !== undefined && v !== null && v !== '') sp.set(k, String(v));
+      });
+    }
+    if (AUTH) sp.set('authuser', AUTH); // preserve Google account
+    sp.set('rid', Date.now());          // light cache-bust to avoid stale/blank
+    u.search = '?' + sp.toString();
+    return u.toString();
+  }
+
+  // 4) Ensure the form’s hidden school input carries the resolved SCHOOL
+  try {
+    var hid = document.querySelector('form.filters input[name="school"]');
+    if (hid && SCHOOL) hid.value = SCHOOL;
+  } catch (_) {}
+
+  function readFilters() {
+    var f = document.querySelector('form.filters') || document.createElement('form');
+    function get(name, def) { var el = f.querySelector('[name="'+name+'"]'); return el ? el.value : def; }
+    return {
+      days:    get('days',   30),
+      limit:   get('limit',  100),
+      grade:   get('grade',  ''),
+      subject: get('subject',''),
+      teacher: get('teacher',''),
+      learner: get('learner',''),
+      nature:  get('nature', '')
+    };
+  }
+
+  // 5) Back to Home: set href, then FORCE top-level navigation via GET form submit
+  function submitHomeForm(){
+    var form = document.createElement('form');
+    form.method = 'get';
+    form.target = '_top';
+    form.action = base.toString(); // e.g. https://script.google.com/macros/s/.../exec
+
+    function set(name, val){
+      if (val !== undefined && val !== null && val !== '') {
+        var i = document.createElement('input');
+        i.type = 'hidden';
+        i.name = name;
+        i.value = String(val);
+        form.appendChild(i);
+      }
+    }
+    set('page','home');
+    if (SCHOOL) set('school', SCHOOL);
+    if (AUTH)   set('authuser', AUTH);
+    set('rid', Date.now()); // avoid cached white page
+
+    document.body.appendChild(form);
+    form.submit();
+  }
+
+  // BACK TO HOME — do NOT rewrite the baked href (it already points to /exec).
+(function(){
+  var a = document.querySelector('a[data-home]');
+  if (!a) return;
+
+  // Use the server-baked absolute link as the source of truth:
+  var href = a.getAttribute('href'); // e.g. https://script.google.com/macros/s/.../exec?page=home&school=...
+
+  // Optional: carry authuser if present (helps in multi-account)
+  try {
+    var au = new URL(location.href).searchParams.get('authuser');
+    if (au) {
+      var u = new URL(href, location.href);
+      if (!u.searchParams.get('authuser')) u.searchParams.set('authuser', au);
+      href = u.toString();
+    }
+  } catch(_) {}
+
+  // Keep the good href visible as a normal fallback
+  a.href = href;
+
+  // Force a top-window navigation on click (avoids form context issues)
+  a.addEventListener('click', function(ev){
+    ev.preventDefault();
+    try {
+      var u2 = new URL(href);
+      u2.searchParams.set('rid', Date.now()); // cache-bust to avoid stale/blank
+      window.top.location.assign(u2.toString());
+    } catch(_) {
+      window.top.location.assign(href);
+    }
+  }, { once:true });
+})();
+
+  // 6) Download links: keep hrefs fresh as filters change (no target/rel here)
+  function wireDownloads() {
+    var filt = readFilters();
+    document.querySelectorAll('a[data-report]').forEach(function(a){
+      var kind = a.getAttribute('data-report');
+      var page = (kind === 'csv') ? 'csv' : 'report';
+      a.href = makeUrl(page, {
+        days:    filt.days,
+        limit:   filt.limit,
+        grade:   filt.grade,
+        subject: filt.subject,
+        teacher: filt.teacher,
+        learner: filt.learner,
+        nature:  filt.nature
+      });
+      // NOTE: Do not set a.target/a.rel here; your separate download script handles the new-tab flow.
+    });
+  }
+  wireDownloads();
+
+  document.querySelectorAll('form.filters select, form.filters input').forEach(function(el){
+    el.addEventListener('change', wireDownloads);
+    el.addEventListener('input', wireDownloads);
+  });
+})();
+</script>
+
+<script>
+// === Download: robust new‑tab handoff (no Drive, no instant close) ===
+(function () {
+  document.querySelectorAll('a[data-report]').forEach(function(anchor){
+    anchor.addEventListener('click', function(ev){
+      ev.preventDefault();
+
+      var kind = anchor.getAttribute('data-report'); // 'pdf' | 'csv'
+      var fallbackHref = anchor.href;                // your ?page=report/csv link
+
+      // Read current filters + school from the form (already present on this page)
+      var form = document.querySelector('form.filters') || document.createElement('form');
+      function get(name, def){ var el = form.querySelector('[name="'+name+'"]'); return el ? el.value : def; }
+      var f = {
+        school:  get('school', ''),
+        days:    get('days',   30),
+        limit:   get('limit',  100),
+        grade:   get('grade',  ''),
+        subject: get('subject',''),
+        teacher: get('teacher',''),
+        learner: get('learner',''),
+        nature:  get('nature', '')
+      };
+
+      // Open a user‑initiated tab we can write to (NO 'noopener')
+      var prep = window.open('about:blank', '_blank');
+      if (!prep) { window.open(fallbackHref, '_blank'); return; }
+
+      prep.document.write(
+        '<!doctype html><title>Preparing download…</title>'
+        + '<p style="font:14px Arial;margin:20px">Preparing your '
+        + (kind === 'csv' ? 'CSV' : 'PDF') + '…</p>'
+      );
+
+      var done = false;
+
+      google.script.run
+        .withSuccessHandler(function(res){
+          if (!res || !res.ok || !res.b64) {
+            prep.document.body.innerHTML =
+              '<p style="font:14px Arial;color:#a00;margin:20px">Could not build file.'
+              + (res && res.reason ? '<br><small>'+res.reason+'</small>' : '')
+              + '<br><br><a href="'+ fallbackHref +'" target="_self" rel="noreferrer">Try direct download ↗</a></p>';
+            return;
+          }
+
+          // Base64 -> Blob inside the *new tab*
+          var byteChars = atob(res.b64);
+          var bytes = new Uint8Array(byteChars.length);
+          for (var i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+          var blob = new Blob([bytes], { type: res.mime || (kind === 'csv' ? 'text/csv' : 'application/pdf') });
+
+          // Create object URL using the new tab's URL object
+          var URL2 = (prep.URL || (prep.window && prep.window.URL) || window.URL);
+          var url  = URL2.createObjectURL(blob);
+
+          // Friendly message + fallback link
+          prep.document.body.innerHTML =
+            '<p style="font:14px Arial;margin:20px">Your ' + (kind==='csv'?'CSV':'PDF') +
+            ' is ready. If the download does not start, click the link below.</p>';
+
+          var link = prep.document.createElement('a');
+          link.href = url;
+          link.download = res.filename || (kind === 'csv' ? 'incidents.csv' : 'incidents.pdf');
+          link.textContent = '⬇️ Download now';
+          link.style.display = 'inline-block';
+          link.style.margin = '12px 20px';
+          prep.document.body.appendChild(link);
+
+          try { link.click(); } catch (_) {}
+          done = true;
+
+          // Give the browser time to fetch the object URL (do not close the tab immediately)
+          setTimeout(function(){ try { URL2.revokeObjectURL(url); } catch(_) {} }, 15000);
+        })
+        .withFailureHandler(function(_err){
+          // Network/sandbox issue — use your baked server route
+          try { prep.location.replace(fallbackHref); } catch(_) { prep.location.href = fallbackHref; }
+        })
+        .buildIncidentsDownloadBase64(kind, f);
+
+      // Safety net: if nothing happened in 6s, go to the server route
+      setTimeout(function(){
+        if (!done) {
+          try { prep.location.replace(fallbackHref); } catch(_) { prep.location.href = fallbackHref; }
+        }
+      }, 6000);
+    });
+  });
+})();
+</script>
+
+<script>
+function ensureAuthuserInForm(event) {
+   var form = event.target;
+  // Get authuser from current URL
+  var authuser = '';
+  try {
+    var currentUrl = new URL(location.href);
+    authuser = currentUrl.searchParams.get('authuser') || '';
+  } catch (_) {}
+  // If we have an authuser, ensure it's in the form
+  if (authuser) {
+    // Check if the form already has an authuser field
+    var existingField = form.querySelector('input[name="authuser"]');
+    if (existingField) {
+      existingField.value = authuser;
+    } else {
+      // Create a hidden input for authuser
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'authuser';
+      input.value = authuser;
+      form.appendChild(input);
+    }
+  }
+  // Allow the form to submit
+  return true;
+}
+</script>
+
+<?!= include('Footer'); ?>
+</body>
+</html>

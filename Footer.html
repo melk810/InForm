@@ -1,0 +1,12 @@
+<!-- Footer.html -->
+<footer id="inform-footer" role="contentinfo" aria-label="Site footer">
+  <div class="inform-footer-inner">
+    © <span id="inform-footer-year"></span> InForm • All rights reserved
+  </div>
+  <script>
+    (function() {
+      var y = document.getElementById('inform-footer-year');
+      if (y) y.textContent = new Date().getFullYear();
+    })();
+  </script>
+</footer>

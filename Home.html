@@ -1,0 +1,189 @@
+<!-- PAGE: Home -->
+<!DOCTYPE html>
+<html>
+<head>
+  <?!= include('Styles'); ?>
+  <title>InForm – Staff Portal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body{font-family:Arial,sans-serif;text-align:center;padding:20px;background:#f0f4f8;color:#333;margin:0}
+    .container{max-width:600px;margin:0 auto;background:#fff;padding:30px 20px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.1)}
+    .logo-container{display:flex;align-items:center;justify-content:center;gap:15px;margin:10px 0 10px}
+    .logo-inform-img{width:120px;height:auto}
+    .logo-school{width:56px;height:auto;border-radius:8px;border:1px solid #ddd}
+    .school{font-size:16px;margin:5px 0 15px;font-weight:500;color:#444}
+    .welcome{font-size:20px;margin:15px 0;color:#444}
+    .role-badge{display:inline-block;padding:6px 12px;font-size:14px;font-weight:bold;border-radius:20px;margin:10px 0;color:#fff}
+    .role-teacher{background:#4CAF50}.role-manager{background:#2196F3}
+    .btn{display:block;width:80%;max-width:300px;margin:20px auto;padding:15px;font-size:18px;font-weight:500;color:#4285f4;background:#fff;border:2px solid #4285f4;border-radius:10px;text-decoration:none;transition:all .3s ease;cursor:pointer}
+    .btn:hover{background:#e6f0ff;transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.1)}
+    .manager-only, .teacher-only {display: none;}
+  </style>
+
+  <script>
+    try {
+      google.script.run.doClientLog('[HOME boot]', JSON.stringify({
+        hasCtx: typeof ctx !== 'undefined',
+        scriptUrl: (typeof ctx !== 'undefined' && ctx.scriptUrl) ? 'present' : '(blank)',
+        role: (typeof ctx !== 'undefined' && ctx.role) || '(none)'
+      }));
+    } catch (_) {}
+  </script>
+
+  <script>
+    // Single source of truth provided by Code.gs (ensureScriptUrlOnCtx_).
+    // If empty in an edge test context, navigation falls back to relative.
+    const INFORM_BASE = "<?= (ctx && ctx.scriptUrl) ? ctx.scriptUrl : '' ?>";
+
+    function goIncidents(extraQS) {
+      // Resolve the school key with safe fallbacks (ctx → URL → localStorage)
+      var key = "<?= (ctx && ctx.selectedSchoolKey) || '' ?>";
+      if (!key) {
+        try {
+          var here = new URL(window.location.href);
+          key = here.searchParams.get('school') || '';
+        } catch (_) {}
+      }
+      if (!key) {
+        try { key = localStorage.getItem('IFC.schoolKey') || ''; } catch (_) {}
+      }
+
+      // Keep localStorage in sync if we found a key
+      if (key) {
+        try { localStorage.setItem('IFC.schoolKey', key); } catch (_) {}
+        // also keep ctx hot for any inline templates that might read it later
+        try {
+          if (typeof window.ctx === 'object' && window.ctx) window.ctx.selectedSchoolKey = key;
+        } catch (_) {}
+      }
+
+      // Build target URL
+      var base = INFORM_BASE || '';
+      var qs = new URLSearchParams(Object.assign({ page: 'incidents' }, extraQS || {}));
+      if (key) qs.set('school', key); // only include school if we have one
+
+      var url = base ? (base + '?' + qs.toString()) : ('?' + qs.toString());
+      try { window.top.location.href = url; } catch(_) { location.href = url; }
+    }
+
+    function setRoleVisibility(role) {
+      var managerDiv = document.querySelector('.manager-only');
+      var teacherDiv = document.querySelector('.teacher-only');
+      var r = (role || '').toString().toLowerCase();
+      if (r === 'manager') {
+        if (managerDiv) managerDiv.style.display = 'block';
+        if (teacherDiv) teacherDiv.style.display = 'none';
+      } else {
+        if (managerDiv) managerDiv.style.display = 'none';
+        if (teacherDiv) teacherDiv.style.display = 'block';
+      }
+    }
+  </script>
+</head>
+
+<body>
+  <div class="container">
+    <div class="logo-container">
+      <img src="https://drive.google.com/thumbnail?authuser=0&sz=w300&id=1djm8Sj95JkgxTh6fgGjjqnBD9q-bNdnc" alt="InForm Logo" class="logo-inform-img">
+      <? if (ctx.schoolLogo) { ?><img src="<?= ctx.schoolLogo ?>" alt="School Logo" class="logo-school"><? } ?>
+    </div>
+
+    <p class="school"><?= ctx.schoolName ?></p>
+    <p class="welcome">Welcome, <?= userDisplayName ?>!</p>
+
+    <div class="manager-only">
+      <div class="role-badge role-manager">Manager</div>
+      <a href="<?= ctx.incidentFormUrl ?>" class="btn" target="_blank" rel="noopener">📝 Log an Incident</a>
+      <a href="<?= ctx.attendanceFormUrl ?>" class="btn" target="_blank" rel="noopener">📋 Take Attendance</a>
+      <!-- Old variants kept commented for reference; the JS button below calls goIncidents() -->
+      <!-- <a href="<?= ctx.scriptUrl ?>?page=incidents" class="btn">👁️ View Incidents</a> -->
+      <!-- <a data-route="incidents" class="btn">👁️ View Incidents</a> -->
+      <!-- <a class="btn" href="javascript:void(0)" onclick="goIncidents()">👁️ View Incidents</a> -->
+     
+      <a
+  id="btnIncidents"
+  class="btn"
+  href="<?= (ctx && ctx.scriptUrl) ? (ctx.scriptUrl + '?page=incidents') : '?page=incidents' ?><? if (ctx && ctx.selectedSchoolKey) { ?>&school=<?= encodeURIComponent(ctx.selectedSchoolKey) ?><? } ?><? if (ctx && ctx.authuser) { ?>&authuser=<?= encodeURIComponent(ctx.authuser) ?><? } ?>&rid=<?= (new Date()).getTime() ?>"
+  target="_top"
+  rel="noopener"
+>👁️ View Incidents</a>
+
+
+
+<script>
+(function () {
+  var a = document.getElementById('btnIncidents');
+  if (!a) return;
+
+  // rebuild the href safely
+  var u = new URL(a.href, location.href);
+
+  // 1) ensure authuser
+  if (!u.searchParams.get('authuser')) {
+    try {
+      var cur = new URL(location.href);
+      var au  = cur.searchParams.get('authuser');
+      u.searchParams.set('authuser', au || '0');
+    } catch (_) {
+      u.searchParams.set('authuser', '0');
+    }
+  }
+
+  // 2) ensure school  ← NEW
+  if (!u.searchParams.get('school')) {
+    var key = '';
+    try {
+      // try page URL first
+      key = new URL(location.href).searchParams.get('school') || '';
+    } catch (_) {}
+    if (!key && window.localStorage) {
+      try { key = localStorage.getItem('IFC.schoolKey') || ''; } catch (_) {}
+    }
+    if (key) u.searchParams.set('school', key);
+  }
+
+  // 3) keep rid fresh (cache-bust)
+  u.searchParams.set('rid', String(Date.now()));
+
+  // 4) write back
+  a.href = u.toString();
+})();
+</script>
+
+
+
+
+
+
+    </div>
+
+    <div class="teacher-only">
+      <div class="role-badge role-teacher">Teacher</div>
+      <a href="<?= ctx.incidentFormUrl ?>" class="btn" target="_blank" rel="noopener">📝 Log an Incident</a>
+      <a href="<?= ctx.attendanceFormUrl ?>" class="btn" target="_blank" rel="noopener">📋 Take Attendance</a>
+    </div>
+
+    <!-- 🔐 Logout (direct render flow on server; no JS needed) -->
+    <p>
+      <a id="logout"
+         href="<?= ctx.scriptUrl ?>?page=logout&clearCache=true"
+         target="_top" rel="noopener noreferrer"
+         style="color:#999;text-decoration:none;">
+        🔐 Logout
+      </a>
+    </p>
+
+  </div>
+
+  <script>
+    // Show the correct section based on role.
+    window.onload = function() {
+      setRoleVisibility('<?!= ctx.role ?>');
+    };
+  </script>
+
+  
+
+  <?!= include('Footer'); ?>
+</body>
+</html>
