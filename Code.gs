@@ -92,7 +92,7 @@ function getPrimaryFromConfigSchools_() {
       return firstNonEmpty;
     }
   } catch (e) {
-    Logger.log('[PrimaryResolve] Schools resolve failed: ' + (e && e.message ? e.message : e));
+  logHelper('Schools resolve failed: ' + (e && e.message ? e.message : e));
   }
   return '';
 }
@@ -119,7 +119,7 @@ function ensurePrimaryWorkbookInCtx_(ctx) {
       Logger.log('[PrimaryResolve] Primary workbook in ctx (pre-set): ' + ctx.dataSheetUrl);
     }
   } catch (e) {
-    Logger.log('[PrimaryResolve] ensurePrimaryWorkbookInCtx_ error: ' + (e && e.message ? e.message : e));
+    logHelper('ensurePrimaryWorkbookInCtx_ error: ' + (e && e.message ? e.message : e));
   }
 }
 
@@ -168,9 +168,8 @@ function __verifySmsSecrets() {
     cfg.sendUrl !== (typeof SMS_SA_SEND_SMS_URL === 'undefined' ? '' : SMS_SA_SEND_SMS_URL) ||
     cfg.senderId !== (typeof SMS_SA_DEFAULT_SENDER_ID === 'undefined' ? '' : SMS_SA_DEFAULT_SENDER_ID)
   );
-  Logger.log('Using Script properties? ' + (usingProps ? 'YES' : 'FALLBACK'));
-  Logger.log('AuthURL=%s  SendURL=%s  SenderID=%s  Username=%s',
-    cfg.authUrl, cfg.sendUrl, cfg.senderId, maskToken_(cfg.username));
+  logHelper('Using Script properties? ' + (usingProps ? 'YES' : 'FALLBACK'));
+  logHelper('AuthURL=' + cfg.authUrl + ' SendURL=' + cfg.sendUrl + ' SenderID=' + cfg.senderId + ' Username=' + maskToken_(cfg.username));
   return usingProps;
 }
 
@@ -272,11 +271,11 @@ page = (rawPage ? rawPage.toLowerCase().trim().replace(/\.$/, '') : page);
     } catch (eUrl) {
       Logger.log('[doGet] scriptUrl resolution error: ' + (eUrl && eUrl.message ? eUrl.message : eUrl));
     }
-    Logger.log('doGet triggered – Code version: v5');
-    Logger.log('Project Script ID: ' + (typeof ScriptApp !== 'undefined' && ScriptApp.getScriptId ? ScriptApp.getScriptId() : 'n/a'));
-    Logger.log('Script URL (absolute): ' + scriptUrl);
-    Logger.log(`[doGet] page="${page}" clearCache="${params.clearCache}" forcePick="${params.forcePick}" authuser="${params.authuser || ''}"`);
-    if (tok) Logger.log('[doGet] Parent token (masked): ' + maskToken_(tok));
+    logHelper('doGet triggered – Code version: v5');
+    logHelper('Project Script ID: ' + (typeof ScriptApp !== 'undefined' && ScriptApp.getScriptId ? ScriptApp.getScriptId() : 'n/a'));
+    logHelper('Script URL (absolute): ' + scriptUrl);
+    logHelper(`page="${page}" clearCache="${params.clearCache}" forcePick="${params.forcePick}" authuser="${params.authuser || ''}"`);
+    if (tok) logHelper('Parent token (masked): ' + maskToken_(tok));
 
     // ──────────────────────────────────────────────────────────────
     // 2) HARD DIAGNOSTICS (return early)
@@ -306,12 +305,12 @@ page = (rawPage ? rawPage.toLowerCase().trim().replace(/\.$/, '') : page);
     //    (echo/debug/login/logout)
     // ──────────────────────────────────────────────────────────────
     if (page === 'echo') {
-      Logger.log('[Echo] route triggered');
+      logHelper('Echo route triggered');
       return echoContextJson_(e);
     }
 
     if (page === 'debug') {
-      Logger.log('Debug route triggered');
+      logHelper('Debug route triggered');
       const body = '<h3>Request parameters</h3><pre style="white-space:pre-wrap;">'
         + JSON.stringify(params, null, 2) + '</pre>';
       return HtmlService.createHtmlOutput(body)
@@ -321,7 +320,7 @@ page = (rawPage ? rawPage.toLowerCase().trim().replace(/\.$/, '') : page);
 
    // ===== A) LOGIN PAGE (SWAPPED TO renderPage_) =================
 if (page === 'login') {
-  Logger.log('Rendering LOGIN page');
+  logHelper('Rendering LOGIN page');
   const authuserQS = (e && e.parameter && e.parameter.authuser)
     ? `&authuser=${encodeURIComponent(e.parameter.authuser)}`
     : '';
@@ -3834,22 +3833,4 @@ function getIncidentsSummaryForUi(opts) {
     var dd = _toInt(opts && opts.days, 30);
     return { days: dd, totalInWindow: 0, today: 0, last7: 0, ytdTotal: 0, topSubjects: [], topLearners: [], topNatures: [], byGrade: [] };
   }
-}
-
-function testMask() {
-  Logger.log(maskToken_('secret123'));
-}
-
-function testLogHelper() {
-  logHelper('Testing log helper');
-}
-
-function testEnsurePrimary() {
-  var ctx = { dataSheetUrl: '' }; // Fake context
-  ensurePrimaryWorkbookInCtx_(ctx);
-}
-
-function testDoGetLog() {
-  var params = { page: 'home', school: 'testSchool' }; // Fake params
-  logHelper('START params=' + JSON.stringify(params));
 }
