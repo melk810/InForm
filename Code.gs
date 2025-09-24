@@ -111,7 +111,7 @@ function ensurePrimaryWorkbookInCtx_(ctx) {
       const fromSchools = getPrimaryFromConfigSchools_();
       if (fromSchools) {
         ctx.dataSheetUrl = fromSchools;
-        Logger.log('[PrimaryResolve] Primary workbook in ctx: ' + ctx.dataSheetUrl);
+        logHelper('Primary workbook in ctx: ' + ctx.dataSheetUrl);
       } else {
         Logger.log('[PrimaryResolve] Could not resolve primary from CONFIG.Schools');
       }
@@ -147,15 +147,6 @@ function _toInt(val, def) {
 
 function _decode(s) {
   try { return decodeURIComponent(String(s || '')); } catch (e) { return String(s || ''); }
-}
-
-// === Masking helpers ===
-// Mask long secrets/tokens in logs (e.g., ABCD…WXYZ)
-function maskToken_(tok) {
-  var s = String(tok || '');
-  if (!s) return '';
-  if (s.length <= 8) return '•'.repeat(s.length);
-  return s.slice(0, 4) + '…' + s.slice(-4);
 }
 
 // Mask tok= query parameter inside URLs
@@ -3843,4 +3834,12 @@ function getIncidentsSummaryForUi(opts) {
     var dd = _toInt(opts && opts.days, 30);
     return { days: dd, totalInWindow: 0, today: 0, last7: 0, ytdTotal: 0, topSubjects: [], topLearners: [], topNatures: [], byGrade: [] };
   }
+}
+
+function testMask() {
+  Logger.log(maskToken_('secret123'));
+}
+
+function testLogHelper() {
+  logHelper('Testing log helper');
 }
