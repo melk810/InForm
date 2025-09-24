@@ -359,7 +359,7 @@ if (page === 'login') {
 
 // ===== LOGOUT (direct render: clear cache → render login page) =====
 if (page === 'logout') {
-  Logger.log('[Logout] direct-render v1');
+  logHelper('Logout direct-render v1');
 
   // 1) Clear any server-side user context (safe if no email)
   try {
