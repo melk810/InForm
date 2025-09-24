@@ -70,7 +70,7 @@ function getPrimaryFromConfigSchools_() {
       if (!firstNonEmpty) firstNonEmpty = url;
       const active = iActive>=0 ? String(values[r][iActive]||'').toLowerCase() : '';
       if (active.startsWith('y') || active==='true') {
-        Logger.log('[PrimaryResolve] Using Active=Y row for primary: ' + url);
+        logHelper('Using Active=Y row for primary: ' + url);
         return url;
       }
     }
@@ -113,7 +113,7 @@ function ensurePrimaryWorkbookInCtx_(ctx) {
         ctx.dataSheetUrl = fromSchools;
         logHelper('Primary workbook in ctx: ' + ctx.dataSheetUrl);
       } else {
-        Logger.log('[PrimaryResolve] Could not resolve primary from CONFIG.Schools');
+        logHelper('Could not resolve primary from CONFIG.Schools');
       }
     } else {
       Logger.log('[PrimaryResolve] Primary workbook in ctx (pre-set): ' + ctx.dataSheetUrl);
@@ -249,7 +249,7 @@ function doGet(e) {
 
   try {
         // 0) Params + early logs (reuse already-read params/page)
-Logger.log('[doGet] START params=%s', JSON.stringify(params));
+logHelper('START params=' + JSON.stringify(params));
 
 // Safe extract of optional token to avoid ReferenceError (declare ONCE)
 var tok = params.tok ? String(params.tok) : '';
@@ -3842,4 +3842,14 @@ function testMask() {
 
 function testLogHelper() {
   logHelper('Testing log helper');
+}
+
+function testEnsurePrimary() {
+  var ctx = { dataSheetUrl: '' }; // Fake context
+  ensurePrimaryWorkbookInCtx_(ctx);
+}
+
+function testDoGetLog() {
+  var params = { page: 'home', school: 'testSchool' }; // Fake params
+  logHelper('START params=' + JSON.stringify(params));
 }
