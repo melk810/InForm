@@ -22,31 +22,46 @@ A lightweight, scalable staff portal for schools, built on Google Apps Script (G
 
 > Share these RAW links with Grok/LLMs. They point straight to the latest contents of each file in this **GitHub repository**.
 
+### .md files
+
+**README.gs**
+https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/README.md
+
+
 ### .gs files
 
-* **Code.gs**
-  [https://raw.githubusercontent.com/melk810/InForm/main/Code.gs](https://raw.githubusercontent.com/melk810/InForm/main/Code.gs)
-* **Helpers.gs**
-  [https://raw.githubusercontent.com/melk810/InForm/main/Helpers.gs](https://raw.githubusercontent.com/melk810/InForm/main/Helpers.gs)
-* **Tests.gs**
-  [https://raw.githubusercontent.com/melk810/InForm/main/Tests.gs](https://raw.githubusercontent.com/melk810/InForm/main/Tests.gs)
+**Code.gs**
+https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Code.gs
 
-### HTML templates
+**Helpers.gs**
+https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Helpers.gs
 
-* **Home.html**
-  [https://raw.githubusercontent.com/melk810/InForm/main/Home.html](https://raw.githubusercontent.com/melk810/InForm/main/Home.html)
-* **Incidents.html**
-  [https://raw.githubusercontent.com/melk810/InForm/main/Incidents.html](https://raw.githubusercontent.com/melk810/InForm/main/Incidents.html)
-* **Login.html**
-  [https://raw.githubusercontent.com/melk810/InForm/main/Login.html](https://raw.githubusercontent.com/melk810/InForm/main/Login.html)
-* **Logout.html**
-  [https://raw.githubusercontent.com/melk810/InForm/main/Logout.html](https://raw.githubusercontent.com/melk810/InForm/main/Logout.html)
-* **Parents.html**
-  [https://raw.githubusercontent.com/melk810/InForm/main/Parents.html](https://raw.githubusercontent.com/melk810/InForm/main/Parents.html)
-* **Styles.html**
-  [https://raw.githubusercontent.com/melk810/InForm/main/Styles.html](https://raw.githubusercontent.com/melk810/InForm/main/Styles.html)
-* **Footer.html**
-  [https://raw.githubusercontent.com/melk810/InForm/main/Footer.html](https://raw.githubusercontent.com/melk810/InForm/main/Footer.html)
+**Tests.gs**
+https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Tests.gs
+
+
+### .html files
+
+**Footer.html**
+https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Footer.html
+
+**Home.html**
+https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Home.html
+
+**Incidents.html**
+https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Incidents.html
+
+**Login.html**
+https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Login.html
+
+**Logout.html**
+https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Logout.html
+
+**Parents.html**
+https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Parents.html
+
+**Styles.html**
+https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Styles.html
 
 ---
 
