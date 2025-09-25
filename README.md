@@ -1,334 +1,187 @@
-# InForm – Google Apps Script Staff Portal
-
-A lightweight, scalable staff portal for schools, built on Google Apps Script (GAS), Google Sheets, and Google Forms. InForm focuses on secure, simple workflows for logging and viewing incidents, attendance, and related staff tasks.
+Here you go — a clean, copy-paste **README.md** you can drop straight into your repo.
 
 ---
 
-## TL;DR (quick start)
+# InForm – GAS project
 
-* **Deploy the web app** from Apps Script → **Deploy** → **New deployment** → type **Web app**.
-* Set **Execute as**: Me. Set **Who has access**: Your org or Anyone (as required by your rollout plan).
-* Copy the **Web app URL** (this is your `scriptUrl`).
-* Open **Code.gs** → set or confirm per‑school config (names, colors, logos, form links, sheet URL).
-* Open **Home.html**, **Incidents.html**, **Login.html** and confirm links use `ctx.scriptUrl` and preserve `ctx.selectedSchoolKey`.
-* Test pages via `?page=home` and `?page=incidents&school=<your-key>`.
+Google Apps Script (GAS) web app for the InForm staff portal. This repo keeps all source files versioned on GitHub and syncs with Apps Script using **clasp**.
 
----
-
-## Table of contents
-
-1. [Project goals](#project-goals)
-2. [Architecture overview](#architecture-overview)
-3. [File map](#file-map)
-4. [Pages & routes](#pages--routes)
-5. [Global context (`ctx`) & config](#global-context-ctx--config)
-6. [Golden rules for navigation & safety](#golden-rules-for-navigation--safety)
-7. [Security model](#security-model)
-8. [Data model & Google Sheets](#data-model--google-sheets)
-9. [Deployments & environments](#deployments--environments)
-10. [Development workflow (GAS + clasp + Git)](#development-workflow-gas--clasp--git)
-11. [Coding standards & patterns](#coding-standards--patterns)
-12. [Troubleshooting](#troubleshooting)
-13. [Scalability & multi‑tenant guidance](#scalability--multi-tenant-guidance)
-14. [Contributing](#contributing)
-15. [AI collaborators: how to help](#ai-collaborators-how-to-help)
-16. [Glossary (clone, branch, fork, etc.)](#glossary-clone-branch-fork-etc)
-17. [Roadmap](#roadmap)
-18. [License](#license)
+> Key pages we maintain carefully for navigation + context:
+> **Code.gs**, **Home.html**, **Incidents.html**, **Login.html** (plus **Helpers.gs**, **Styles.html**).
+> We always preserve `ctx.scriptUrl` and the `school` query key in links.
 
 ---
 
-## Project goals
+## Raw file index (always current)
 
-* **Practical**: Give staff a clean, fast portal to log and view incidents and attendance.
-* **Safe by default**: Navigation that never "drops" context (e.g., school key), link‑building that avoids broken routes, and templates that resist JS hoisting pitfalls.
-* **Scalable**: Easily onboard additional schools (multi‑tenant) without rewriting code.
-* **Sellable**: Clear separation of configuration vs. product logic, so this can be packaged for other institutions.
+Use these **GitHub Raw** links when sharing with LLMs or reviewing the latest source:
 
----
+### .gs files
 
-## Architecture overview
+* **Code.gs**
+  [https://raw.githubusercontent.com/melk810/InForm/main/Code.gs](https://raw.githubusercontent.com/melk810/InForm/main/Code.gs)
+* **Helpers.gs**
+  [https://raw.githubusercontent.com/melk810/InForm/main/Helpers.gs](https://raw.githubusercontent.com/melk810/InForm/main/Helpers.gs)
+* **Tests.gs**
+  [https://raw.githubusercontent.com/melk810/InForm/main/Tests.gs](https://raw.githubusercontent.com/melk810/InForm/main/Tests.gs)
 
-* **Frontend**: HTML templates rendered by GAS `HtmlService`:
+### HTML templates
 
-  * `Home.html` – welcome & role‑based actions.
-  * `Incidents.html` – filters, list, CSV/Report download.
-  * `Login.html` – school selection & sign‑in.
-* **Backend**: `Code.gs` (routing via `doGet`), `Helpers.gs` (utility functions), optional `logHelpers` (structured logging pattern) and other server utilities.
-* **Data**: Google Sheets (source of truth) + Google Forms (data entry for incidents & attendance).
-* **Routing**: `GET` with `page` param, e.g. `?page=home`, `?page=incidents`. Additional query params preserve state (e.g., `school=<key>`).
-
----
-
-## File map
-
-> Your repository or Apps Script project will contain these core files.
-
-* **Code.gs** – main entry (e.g., `doGet(e)`), page rendering (`renderPage_`), URL builders (`buildUrl_`), context assembly.
-* **Helpers.gs** – shared utilities: parameter parsing, caching, Sheets I/O, formatting.
-* **Home.html** – landing page; shows school branding; role‑based links (incident/attendance forms, incidents view).
-* **Incidents.html** – filters + list; clear/back buttons; export/download.
-* **Login.html** – school selection & sign‑in; used for logout redirects as well.
-* **(Optional)** `Styles.html`, `Partials.html` – shared CSS or template fragments via `<?!= include('Styles'); ?>`.
-
-> **Convention**: Templates receive a `ctx` object (context) with all values needed to render and link safely.
+* **Home.html**
+  [https://raw.githubusercontent.com/melk810/InForm/main/Home.html](https://raw.githubusercontent.com/melk810/InForm/main/Home.html)
+* **Incidents.html**
+  [https://raw.githubusercontent.com/melk810/InForm/main/Incidents.html](https://raw.githubusercontent.com/melk810/InForm/main/Incidents.html)
+* **Login.html**
+  [https://raw.githubusercontent.com/melk810/InForm/main/Login.html](https://raw.githubusercontent.com/melk810/InForm/main/Login.html)
+* **Logout.html**
+  [https://raw.githubusercontent.com/melk810/InForm/main/Logout.html](https://raw.githubusercontent.com/melk810/InForm/main/Logout.html)
+* **Parents.html**
+  [https://raw.githubusercontent.com/melk810/InForm/main/Parents.html](https://raw.githubusercontent.com/melk810/InForm/main/Parents.html)
+* **Styles.html**
+  [https://raw.githubusercontent.com/melk810/InForm/main/Styles.html](https://raw.githubusercontent.com/melk810/InForm/main/Styles.html)
+* **Footer.html**
+  [https://raw.githubusercontent.com/melk810/InForm/main/Footer.html](https://raw.githubusercontent.com/melk810/InForm/main/Footer.html)
 
 ---
 
-## Pages & routes
-
-* `?page=home` → **Home**
-* `?page=incidents` → **Incidents** (supports filters)
-* `?page=login` → **Login/School Picker**
-* `?page=logout` → **Logout flow** (renders Login directly)
-* `?page=report` → **Export/Report** (respects filters)
-
-**Common query params**
-
-* `school` → *selected school key* (keep this on navigation!)
-* `days`, `grade`, `staff`, `type` → optional filters for incidents (actual names configurable; align with your Sheets columns).
-* `clearCache=true` → server may bypass caches if implemented.
-
-**Example**
+## Project structure
 
 ```
-https://script.google.com/macros/s/XXXXX/exec?page=incidents&school=DOORNPOORT&days=7
+InForm/
+├─ Code.gs
+├─ Helpers.gs
+├─ Tests.gs
+├─ Home.html
+├─ Incidents.html
+├─ Login.html
+├─ Logout.html
+├─ Parents.html
+├─ Styles.html          # CSS-only include (no <base> or <link> tags)
+├─ Footer.html
+└─ README.md
 ```
 
 ---
 
-## Global context (`ctx`) & config
+## Conventions we follow
 
-Templates are rendered with a **`ctx` object**. Typical fields:
+* **Context object**: server injects `ctx` with `scriptUrl`, `selectedSchoolKey`, `schoolLogo`, `schoolColor`, etc.
+* **Links keep school context**:
 
-```js
-{
-  userDisplayName: "Kroukamp E",
-  role: "manager", // e.g., 'staff', 'manager', 'admin'
-  schoolName: "Doornpoort High School",
-  schoolColor: "#1a4c8a",
-  schoolLogo: "https://.../logo.png",
-  dataSheetUrl: "https://docs.google.com/spreadsheets/...",
-  incidentFormUrl: "https://forms.gle/...",
-  attendanceFormUrl: "https://forms.gle/...",
-  scriptUrl: "https://script.google.com/macros/s/XXXXX/exec", // absolute
-  selectedSchoolKey: "DOORNPOORT" // NEVER drop this in links
-}
-```
+  * Clear on Incidents:
+    `href="<?= ctx.scriptUrl ?>?page=incidents&school=<?= encodeURIComponent(ctx.selectedSchoolKey||'') ?>"`
+  * Back to Home:
+    `href="<?= ctx.scriptUrl ?>?page=home&school=<?= encodeURIComponent(ctx.selectedSchoolKey||'') ?>"`
+* **Head tags (per page)**: put document-level tags in each page’s `<head>`, not in Styles.html:
 
-**Where does `ctx` come from?**
-
-* `Code.gs` builds it per request (using the signed‑in user, deployment URL, and selected school), then calls `renderPage_('home', ctx)` etc.
-
-**Branding**
-
-* Use `ctx.schoolName`, `ctx.schoolLogo`, and `ctx.schoolColor` for the header, accent color, and favicon where appropriate.
+  ```html
+  <base target="_top">
+  <link rel="icon"
+        href="<?= (ctx && ctx.schoolLogo) ? ctx.schoolLogo
+             : 'https://drive.google.com/thumbnail?authuser=0&sz=w64&id=1djm8Sj95JkgxTh6fgGjjqnBD9q-bNdnc' ?>"
+        type="image/png">
+  <?!= include('Styles'); ?> <!-- Styles.html is CSS-only -->
+  ```
+* **Styles.html** is **CSS-only** (inside a single `<style>…</style>` block).
 
 ---
 
-## Golden rules for navigation & safety
+## Quick start (local + clasp + GitHub)
 
-1. **Always link with `ctx.scriptUrl` (absolute)** and **preserve `ctx.selectedSchoolKey`**:
+### 1) Install Node.js (one-time)
 
-   ```html
-   <!-- Clear filters but keep school -->
-   <a class="btn" href="<?= ctx.scriptUrl ?>?page=incidents&school=<?= encodeURIComponent(ctx.selectedSchoolKey||'') ?>">Clear</a>
+* Download **Node.js LTS** → install → open Terminal/PowerShell:
 
-   <!-- Back to Home with school -->
-   <a class="btn" href="<?= ctx.scriptUrl ?>?page=home&school=<?= encodeURIComponent(ctx.selectedSchoolKey||'') ?>">← Back to Home</a>
-   ```
-2. **Hoist‑safe defaults (do not redeclare template globals)**:
-
-   ```html
-   <? // In templates: read existing globals, reassign WITHOUT `var` ?>
-   <? (function(){
-     var _schoolName  = (typeof schoolName  !== 'undefined') ? schoolName  : 'School';
-     var _schoolLogo  = (typeof schoolLogo  !== 'undefined') ? schoolLogo  : '';
-     var _schoolColor = (typeof schoolColor !== 'undefined') ? schoolColor : '#1a4c8a';
-     schoolName  = _schoolName;
-     schoolLogo  = _schoolLogo;
-     schoolColor = _schoolColor;
-   })(); ?>
-   ```
-
-   *Why?* Re‑declaring with `var` can hoist and overwrite server‑provided values → broken pages or empty lists.
-3. **Escape iframes by default**:
-
-   ```html
-   <base target="_top">
-   ```
-4. **Encode user input in URLs**: `encodeURIComponent(...)` for each query value.
-5. **Use server logs** instead of `console.log`:
-
-   ```js
-   Logger.log('[Incidents boot] %s', JSON.stringify({ page: 'Incidents', hasScriptUrl: !!ctx.scriptUrl, selectedSchoolKey: ctx.selectedSchoolKey }));
-   ```
-
----
-
-## Security model
-
-* **Least privilege**: Scope your spreadsheet access; avoid broad Drive ops.
-* **X-Frame-Options**: Some pages use
-
-  ```js
-  .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+  ```
+  node -v
+  npm -v
   ```
 
-  Only enable when truly needed (e.g., embedded in trusted environments). Prefer `<base target="_top">` so links escape potential hostile iframes.
-* **Sanitize**: Never inject unsanitized user input into HTML. For text nodes, use `<?= ?>` (Apps Script auto‑escapes). For URLs, always `encodeURIComponent` parameters.
-* **Avoid** `iframe[sandbox]` with **both** `allow-scripts` **and** `allow-same-origin` – this combination can break sandboxing and enable escape vectors.
+### 2) Install clasp (one-time)
+
+```bash
+npm i -g @google/clasp
+clasp --version
+clasp login
+```
+
+### 3) Clone this GitHub repo (first time)
+
+```bash
+git clone https://github.com/melk810/InForm.git
+cd InForm
+```
+
+> If you want to connect this folder to an existing Apps Script project:
+>
+> * Find your **Script ID** in Apps Script (Project Settings).
+> * Add a `.clasp.json` pointing to that ID and (optionally) a `rootDir` if you use one.
+>   Minimal:
+>
+>   ```json
+>   { "scriptId": "YOUR_SCRIPT_ID" }
+>   ```
+
+### 4) Daily workflow
+
+**A) Pull latest from Apps Script (if edited online):**
+
+```bash
+clasp pull
+```
+
+**B) Edit files locally** (Code.gs, Home.html, Incidents.html, Login.html, Styles.html, etc.)
+
+**C) Commit to GitHub:**
+
+```bash
+git add .
+git commit -m "fix: keep school key on Clear/Home; move base+favicon to head"
+git push
+```
+
+**D) Push changes back to Apps Script:**
+
+```bash
+clasp push
+```
+
+**E) Deploy (make live):**
+
+```bash
+clasp version -m "prod release"
+clasp deploy -d "prod release"
+```
 
 ---
 
-## Data model & Google Sheets
+## Deployment notes
 
-* **Incidents** are stored in a Google Sheet (single tab or one per school). Suggested minimal columns:
+* Use **Execute as: User accessing** (unless you have a special reason).
+* Access level: choose what your school needs (often “Anyone with link” inside domain settings or restricted).
+* Updating an existing deployment:
 
-  * Timestamp, StaffEmail, StudentName, Grade, IncidentType, Severity, Notes, SchoolKey
-* **Attendance** can be a separate tab or sheet with analogous fields.
-* **Filters** on `Incidents.html` should match column names (e.g., `days`, `grade`, `staff`, `type`). Implement filtering **server‑side** where possible for performance and consistency.
-
-**Batch reads & writes**
-
-* Prefer `getValues()` once + in‑memory filtering over many `getValue()` calls.
-* If sheets grow large, add a **derived tab** (query or pivot) for the most‑frequent views, or introduce pagination.
-
----
-
-## Deployments & environments
-
-* Use **versioned deployments** (Apps Script → Deploy → Manage deployments).
-* Maintain **staging** and **production** deployments (two separate web app URLs). Put both into Script Properties if needed.
-* After deployment, verify `ctx.scriptUrl` points at the active deployment URL.
-
-**Logout flow**
-
-* Implement a direct render of Login to avoid blank pages or external redirects:
-
-  ```js
-  /** Directly render the Login (school selection) page */
-  function renderLoginDirect_(scriptUrl, options) {
-    var loginUrl = buildUrl_(scriptUrl || getExecUrl_(), 'login', { clearCache: true, forcePick: 1 });
-    return renderPage_('login', {
-      signinUrl: loginUrl,
-      redirect:  loginUrl,
-      safeRedirect: JSON.stringify(loginUrl),
-      publicUrl: scriptUrl || getExecUrl_(),
-      scriptUrl: scriptUrl || getExecUrl_(),
-      forcePick: 1,
-      msg: options && options.msg || ''
-    }).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-  }
+  ```bash
+  clasp deployments
+  clasp version -m "update"
+  clasp deploy -i <DEPLOYMENT_ID>
   ```
-
----
-
-## Development workflow (GAS + clasp + Git)
-
-**Recommended**: Use [clasp](https://github.com/google/clasp) to sync Apps Script code with Git.
-
-1. **Enable Apps Script API** in your Google Cloud console.
-2. Install clasp: `npm i -g @google/clasp`.
-3. `clasp login`
-4. `clasp clone <scriptId>` → pulls your Apps Script project locally.
-5. Edit files locally; commit with Git; push to GitHub.
-6. `clasp push` to upload changes back to Apps Script.
-7. Create a new **deployment** in Apps Script for production.
-
-**Git best practices**
-
-* Feature branches (`feat/…`, `fix/…`).
-* Pull Requests with a description of the change and screenshots.
-* Tag releases (`v1.2.3`) that map to Apps Script deployments.
-
----
-
-## Coding standards & patterns
-
-* **Keep templates dumb**: all data prepared in `Code.gs`, minimal logic in HTML.
-* **No duplicate globals** in templates; follow the **hoist‑safe** pattern.
-* **Absolute URLs** via `ctx.scriptUrl`; never rely on `./` or relative links in production.
-* **Preserve context**: Always carry `school` across pages.
-* **Logging**: use `Logger.log` server‑side; optionally implement a `doClientLog(imgBeacon)` pattern if you need client traces.
-* **Performance**: Avoid heavy loops hitting Sheets; batch, cache, and pre‑compute.
 
 ---
 
 ## Troubleshooting
 
-**White screen on Logout**
-
-* Ensure the logout route renders `Login.html` directly (`renderLoginDirect_`), not a blind redirect.
-* Confirm links use `ctx.scriptUrl` and include `?page=login` or `?page=logout` as intended.
-
-**Incidents list shows 0 rows**
-
-* Check for **`var` re‑declarations** in templates that shadow server globals (fix via hoist‑safe defaults).
-* Inspect `Logger.log` output in Apps Script → Executions.
-
-**Clear/Back buttons lose school**
-
-* Make sure links keep `&school=<?= encodeURIComponent(ctx.selectedSchoolKey||'') ?>`.
-
-**Wrong base URL**
-
-* Never compute links from `location.href` alone. Prefer server‑provided `ctx.scriptUrl`.
-
----
-
-## Scalability & multi‑tenant guidance
-
-* **Tenant key**: Treat `selectedSchoolKey` as the tenant ID. Keep it on all routes.
-* **Config isolation**: Store per‑school config in Script Properties, a JSON tab, or a config sheet; hydrate into `ctx` per request.
-* **Data isolation**: Either one shared sheet with a `SchoolKey` column, or separate sheets per school. The latter scales better for very large datasets.
-* **Branding**: Provide `schoolLogo`, `schoolColor` in config to theme pages without code changes.
-* **Exports**: For large reports, consider generating a file (CSV) in Drive and serving a link rather than streaming everything live.
-
----
-
-## Contributing
-
-1. Open an issue describing the change.
-2. Fork or branch, implement changes following **Coding standards** above.
-3. Add/adjust unitless checks (lint, simple validation functions).
-4. Submit a PR with screenshots/GIFs of UI changes.
-
-**Commit style**: `feat(incidents): add pagination`, `fix(login): keep school on redirect`.
-
----
-
-## AI collaborators: how to help
-
-* **Return full files** when editing HTML pages (not snippets) to prevent drift.
-* **Respect `ctx`**: never replace with hardcoded URLs; keep `selectedSchoolKey`.
-* **Use hoist‑safe defaults** in templates—do not `var` re‑declare server globals.
-* **When modifying navigation**, update **both** Clear and Back to Home buttons.
-* **Log usefully**: add one concise `Logger.log` per page boot with page name and key params.
-* **Don’t invent data schemas**: align filters and columns with what the sheet actually contains; if unknown, propose optional fields clearly.
-
----
-
-## Glossary (clone, branch, fork, etc.)
-
-* **Clone**: Download a repository to your computer so you have a local copy.
-* **Branch**: A separate line of work within the same repo (safe space to make changes without breaking `main`).
-* **Fork**: Your own copy of someone else’s repo under your account; you can freely experiment and send PRs back.
-* **Pull Request (PR)**: A proposal to merge your branch/fork changes into another branch (often `main`).
-
----
-
-## Roadmap
-
-* Extract `logHelpers` for structured logging & telemetry.
-* Add server‑side pagination for large incident datasets.
-* Introduce role‑based access checks (admin/manager/staff) on the server.
-* Add automated tests for URL building and parameter parsing.
-* Optional: Move config to a dedicated JSON file or Sheet tab with an admin UI.
+* **Links open inside iframes** → ensure `<base target="_top">` is in the page’s `<head>`.
+* **School key lost on navigation** → make sure links include `&school=<?= encodeURIComponent(ctx.selectedSchoolKey||'') ?>`.
+* **Raw file looks “empty”** → confirm you’re viewing the **main** branch, changes are pushed, and use the **GitHub Raw** links above (not a deleted gist). Add `?v=2` to bypass caching if needed.
+* **clasp not found** → reopen terminal after install, or reinstall Node.js LTS.
+* **Wrong Google account** → `clasp logout && clasp login`.
 
 ---
 
 ## License
 
-MIT (or institution‑specific) — update as required.
+Private / internal school project unless stated otherwise.
+
+---
 
