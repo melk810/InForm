@@ -24,7 +24,7 @@ A lightweight, scalable staff portal for schools, built on Google Apps Script (G
 
 ### .md files
 
-**README.gs**
+**README.md**
 https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/README.md
 
 
