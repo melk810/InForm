@@ -244,6 +244,122 @@ function getFiltersFromParams_(e) {
   };
 }
 
+/**
+ * Minimal, dedupe-safe shim: defines getConfigSheetUrl_, readSchoolsMapFromConfig_, loadCtx_
+ * ONLY if they don't already exist elsewhere in your project.
+ * Place this above doGet.
+ */
+(function (global) {
+  var G = /** @type {*} */ (global);
+  function _log(s){ try{ Logger.log('[ctx-shim] ' + s); } catch(_){} }
+
+  // --- 1) Resolve admin Config sheet URL (prefers Script Property override)
+  if (typeof G.getConfigSheetUrl_ !== 'function') {
+    G.getConfigSheetUrl_ = function () {
+      try {
+        var prop = PropertiesService.getScriptProperties().getProperty('INF_CONFIG_SHEET_URL') || '';
+        if (/\/spreadsheets\/d\//.test(prop)) return prop;
+      } catch (_) {}
+      try { return (typeof CONFIG_SHEET_URL !== 'undefined') ? CONFIG_SHEET_URL : ''; } catch (_) { return ''; }
+    };
+    _log('getConfigSheetUrl_ defined.');
+  } else {
+    _log('getConfigSheetUrl_ exists; skipping.');
+  }
+
+  // --- 2) Read schools from Config → "Schools" tab (sheet-first approach)
+  if (typeof G.readSchoolsMapFromConfig_ !== 'function') {
+    G.readSchoolsMapFromConfig_ = function () {
+      var url = G.getConfigSheetUrl_();
+      if (!url) { _log('No CONFIG_SHEET_URL/INF_CONFIG_SHEET_URL.'); return {}; }
+      try {
+        var ss = SpreadsheetApp.openByUrl(url);
+        var sh = ss.getSheetByName('Schools');
+        if (!sh) { _log('"Schools" tab not found.'); return {}; }
+        var values = sh.getDataRange().getValues();
+        if (!values || values.length < 2) return {};
+
+        // Flexible header matching (case-insensitive)
+        var H = values[0].map(function(h){ return String(h || '').toLowerCase().trim(); });
+        function idx(names){
+          var set = names.map(function(n){ return n.toLowerCase().trim(); });
+          for (var i=0;i<H.length;i++){ if (set.indexOf(H[i]) >= 0) return i; }
+          return -1;
+        }
+
+        var iKey  = idx(['key','school key']);
+        var iName = idx(['school name','school']);
+        var iCol  = idx(['color','colour','school color','school colour']);
+        var iLogo = idx(['logo','school logo']);
+        var iData = idx(['data sheet url','primary spreadsheet url','primary spreadsheet','data spreadsheet url']);
+        var iInc  = idx(['incident form url','incident url']);
+        var iAtt  = idx(['attendance form url','attendance url']);
+        var iDom  = idx(['domain','email domain']);
+        var iAct  = idx(['active','enabled']);
+
+        var map = {};
+        for (var r=1; r<values.length; r++){
+          var row = values[r] || [];
+          var key = iKey >= 0 ? String(row[iKey] || '').trim() : '';
+          if (!key) continue;
+
+          var activeRaw = iAct >= 0 ? String(row[iAct] || '').toLowerCase().trim() : '';
+          var active = !activeRaw || activeRaw.startsWith('y') || activeRaw === 'true';
+          if (!active) continue;
+
+          map[key] = {
+            schoolKey: key,
+            schoolName:   iName >= 0 ? String(row[iName] || '').trim() : key,
+            schoolColor:  iCol  >= 0 ? String(row[iCol]  || '').trim() : '#1e293b',
+            schoolLogo:   iLogo >= 0 ? String(row[iLogo] || '').trim() : '',
+            dataSheetUrl: iData >= 0 ? String(row[iData] || '').trim() : '',
+            incidentFormUrl:   iInc >= 0 ? String(row[iInc] || '').trim() : '',
+            attendanceFormUrl: iAtt >= 0 ? String(row[iAtt] || '').trim() : '',
+            domain:       iDom  >= 0 ? String(row[iDom]  || '').toLowerCase().trim() : ''
+          };
+        }
+        return map;
+      } catch (e) {
+        try { Logger.log('[readSchoolsMapFromConfig_] ' + e); } catch(_){}
+        return {};
+      }
+    };
+    _log('readSchoolsMapFromConfig_ defined.');
+  } else {
+    _log('readSchoolsMapFromConfig_ exists; skipping.');
+  }
+
+  // --- 3) Provide a single, predictable ctx for templates & routing
+  if (typeof G.loadCtx_ !== 'function') {
+    G.loadCtx_ = function (params) {
+      params = params || {};
+      var schoolsMap = G.readSchoolsMapFromConfig_();
+      var selectedKey = (params.school || params.s || '').toString().trim();
+      var school = (selectedKey && schoolsMap[selectedKey]) ? schoolsMap[selectedKey] : null;
+
+      return {
+        // Absolute base for all navigation (you already have getExecUrl_)
+        scriptUrl: (typeof G.getExecUrl_ === 'function' ? G.getExecUrl_() : ''),
+        // Selection state
+        selectedSchoolKey: school ? school.schoolKey : '',
+        needsPick: !school,
+        schools: Object.keys(schoolsMap).map(function(k){ return schoolsMap[k]; }),
+        // Branding
+        schoolName:  school ? (school.schoolName  || 'School') : 'Pick a school',
+        schoolColor: school ? (school.schoolColor || '#1e293b') : '#1e293b',
+        schoolLogo:  school ? (school.schoolLogo  || '') : '',
+        // Effective links (strictly from the sheet)
+        dataSheetUrl:      school ? (school.dataSheetUrl      || '') : '',
+        incidentFormUrl:   school ? (school.incidentFormUrl   || '') : '',
+        attendanceFormUrl: school ? (school.attendanceFormUrl || '') : ''
+      };
+    };
+    _log('loadCtx_ defined.');
+  } else {
+    _log('loadCtx_ exists; skipping.');
+  }
+})(this);
+
 // ========================================
 // 🌐 doGet – routing (echo first, then parent-force, with logs)
 // ========================================
@@ -254,21 +370,27 @@ function doGet(e) {
   var school = params.school ? String(params.school) : '';
   var au     = params.authuser ? String(params.authuser) : '';
 
-  // 2) initial ctx (if you do this early, that's fine)
-  var ctx = (typeof getUserContext_ === 'function') ? getUserContext_() : {};
+    // 2) Base ctx from Config sheet (school list/branding/links)
+  var ctxSheet = (typeof loadCtx_ === 'function') ? loadCtx_(params) : {};
 
-  // 3) TRUST URL FIRST on the initial ctx (harmless, keeps things consistent)
-  if (school) ctx.selectedSchoolKey = school;
-  if (au)     ctx.authuser          = au;
+  // 3) Ensure absolute scriptUrl early (your later ensureScriptUrlOnCtx_ will keep it)
+  if (!ctxSheet.scriptUrl || !/^https?:\/\//.test(ctxSheet.scriptUrl)) {
+    try {
+      ctxSheet.scriptUrl = (typeof getWebAppUrl_ === 'function')
+        ? getWebAppUrl_()
+        : (ScriptApp.getService().getUrl() || '');
+    } catch (_) {}
+  }
 
-  // 4) capture trusted values from CURRENT request (not from ctx)
-  var _trustedSchool = (params.school)   ? String(params.school)   : '';
-  var _trustedAu     = (params.authuser) ? String(params.authuser) : '';
+  // 4) Capture trusted values from CURRENT request (don’t rely on any stale ctx)
+  var _trustedSchool = params.school   ? String(params.school)   : '';
+  var _trustedAu     = params.authuser ? String(params.authuser) : '';
 
-  // 5) rebuild ctx from your data stores
-  ctx = getUserContext_(e);
+  // 5) Merge your existing user/auth ctx OVER the sheet ctx (your auth wins)
+  var authCtx = (typeof getUserContext_ === 'function') ? getUserContext_(e) : {};
+  var ctx = Object.assign({}, ctxSheet, authCtx);
 
-  // 6) re-apply trusted URL values so they are not lost
+  // 6) Re-apply trusted URL values so they are not lost
   if (_trustedSchool) ctx.selectedSchoolKey = _trustedSchool;
   if (_trustedAu)     ctx.authuser          = _trustedAu;
 
