@@ -28,12 +28,43 @@ const STAFF_SHEET_NAME = 'Staff'; // tab name in each school's primary data spre
 // ========================================
 // 🧪 SMS TESTING TOGGLE (set to false for live sends)
 // ========================================
-const DRY_RUN = false; // true = no real SMS; logs only.  false = real SMS via UrlFetchApp.
+const DRY_RUN = true; // true = no real SMS; logs only.  false = real SMS via UrlFetchApp.
 
 // ===============================
 // 🔖 Build stamp (surfaced in logs + HTML)
 // ===============================
 const BUILD = 'Incidents.v9-2025-09-19T08:55';
+
+const INCIDENT_PER_PAGE = 28;
+const CACHE_DURATION_SECONDS = 300; // 5 minutes
+const TOKEN_LENGTH = 24;
+const DEFAULT_INCIDENT_LIMIT = 200;
+
+// Add error message constants
+const ERROR_MESSAGES = {
+  INVALID_TOKEN: 'Invalid or expired link',
+  NO_DATA_SHEET: 'No data sheet configured',
+  SHEET_NOT_FOUND: 'Form Responses 1 sheet not found',
+  NO_LEARNER_FOUND: 'No learner found in submission'
+};
+
+// Add common UI strings
+const UI_STRINGS = {
+  BACK_HOME: 'Back Home',
+  DOWNLOAD_PDF: 'Download PDF',
+  PREPARING_PDF: 'Preparing your PDF...'
+};
+
+// Add default timezone and date formats
+const DEFAULT_TIMEZONE = 'Africa/Johannesburg';
+const DATE_FORMAT = 'yyyy-MM-dd';
+const DATETIME_FORMAT = 'yyyy-MM-dd HH:mm:ss';
+
+// Add helper function
+function formatDate_(date, format) {
+  const tz = Session.getScriptTimeZone() || DEFAULT_TIMEZONE;
+  return Utilities.formatDate(date, tz, format || DATE_FORMAT);
+}
 
 // --- Helper: pick the primary workbook URL from CONFIG 'Schools' sheet.
 // Columns expected (case-insensitive header match):
@@ -1002,20 +1033,16 @@ function renderReportCreationPage_(baseUrl, ctx, opts) {
 
 // --- Build the PDF file for incidents (called above) ---
 function buildIncidentsReportPdf_(ctx, opts, summary, incidents) {
-  const tz = Session.getScriptTimeZone() || 'Africa/Johannesburg';
-  const fmt = d => Utilities.formatDate(d, tz, 'yyyy-MM-dd');
   const today = new Date();
   const start = new Date(); start.setDate(today.getDate() - (opts.days || 30));
 
   // Builds a parent-facing PDF as a Blob (no Drive sharing needed).
   function buildParentPdfBlob_(ctx, learnerName, opts, parentIncidents) {
-    const tz = Session.getScriptTimeZone() || 'Africa/Johannesburg';
-    const fmt = d => Utilities.formatDate(d, tz, 'yyyy-MM-dd');
     const now = new Date();
     const start = new Date(); start.setDate(now.getDate() - (parseInt(opts.days, 10) || 30));
 
     const titleBase = `Incident Report for Learner: ${learnerName || 'Unknown'}`;
-    const title = `${titleBase} – ${fmt(now)}`;
+    const title = `${titleBase} – ${formatDate_(now)}`;
 
     const doc = DocumentApp.create(title);
     const body = doc.getBody();
@@ -1030,8 +1057,8 @@ function buildIncidentsReportPdf_(ctx, opts, summary, incidents) {
     body.appendParagraph(titleBase).setHeading(DocumentApp.ParagraphHeading.HEADING1);
 
     [
-      `Period: ${fmt(start)} to ${fmt(now)}`,
-      `Report date: ${fmt(now)}`,
+      `Period: ${formatDate_(start)} to ${formatDate_(now)}`,
+      `Report date: ${formatDate_(now)}`,
       `Incidents in window: ${parentIncidents.length}`
     ].forEach(line => body.appendParagraph(line).setFontSize(10).setForegroundColor('#666666'));
 
@@ -1049,7 +1076,7 @@ function buildIncidentsReportPdf_(ctx, opts, summary, incidents) {
     ]);
 
     // Reuse your existing table helper
-    appendIncidentsTablePaginated_(body, rows, 28);
+    appendIncidentsTablePaginated_(body, rows, INCIDENT_PER_PAGE);
 
     try {
       const footer = doc.addFooter();
@@ -1062,7 +1089,7 @@ function buildIncidentsReportPdf_(ctx, opts, summary, incidents) {
     doc.saveAndClose();
 
     const docFile = DriveApp.getFileById(doc.getId());
-    const safeName = `InForm – ${ctx.schoolName} – ${learnerName} – ${fmt(now)}.pdf`.replace(/[\\\/:*?"<>|]+/g, '_').slice(0, 120);
+    const safeName = `InForm – ${ctx.schoolName} – ${learnerName} – ${formatDate_(now)}.pdf`.replace(/[\\\/:*?"<>|]+/g, '_').slice(0, 120);
     const pdfBlob = docFile.getAs(MimeType.PDF).setName(safeName);
 
     // Clean up the temporary Google Doc
@@ -1078,7 +1105,7 @@ function buildIncidentsReportPdf_(ctx, opts, summary, incidents) {
   const titleBase = isLearnerSpecific
     ? `Incident Report for Learner: ${learnerName || 'Unknown'}`
     : `InForm Incident Report – ${ctx.schoolName}`;
-  const title = `${titleBase} – ${fmt(today)}`;
+  const title = `${titleBase} – ${formatDate_(today)}`;
   const doc = DocumentApp.create(title);
   const body = doc.getBody();
 
@@ -1093,8 +1120,8 @@ function buildIncidentsReportPdf_(ctx, opts, summary, incidents) {
   body.appendParagraph(titleBase).setHeading(DocumentApp.ParagraphHeading.HEADING1);
 
   const infoLines = [];
-  infoLines.push(`Period: ${fmt(start)} to ${fmt(today)}`);
-  infoLines.push(`Report date: ${fmt(today)}`);
+  infoLines.push(`Period: ${formatDate_(start)} to ${formatDate_(today)}`);
+  infoLines.push(`Report date: ${formatDate_(today)}`);
   if (isLearnerSpecific) {
     infoLines.push(`Incidents in period: ${incidents.length}`);
   } else {
@@ -1135,7 +1162,7 @@ function buildIncidentsReportPdf_(ctx, opts, summary, incidents) {
     const card = body.appendTable([
       ['Learner', learnerName || 'Unknown'],
       ['Grade (recent)', derivedGrade],
-      ['Window', `${fmt(start)} → ${fmt(today)}`],
+      ['Window', `${formatDate_(start)} → ${formatDate_(today)}`],
       ['Incidents in window', String(incidents.length)]
     ]);
     if (typeof card.setBorderWidth === 'function') card.setBorderWidth(0);
@@ -1151,7 +1178,7 @@ function buildIncidentsReportPdf_(ctx, opts, summary, incidents) {
   // Incidents table with page breaks
   body.appendParagraph(isLearnerSpecific ? 'Incident Details' : 'Incidents')
     .setHeading(DocumentApp.ParagraphHeading.HEADING2);
-  appendIncidentsTablePaginated_(body, incidents, 28);
+  appendIncidentsTablePaginated_(body, incidents, INCIDENT_PER_PAGE);
 
   try {
     const footer = doc.addFooter();
@@ -1421,7 +1448,7 @@ function getSmsSouthAfricaAuthToken() {
       try { t = JSON.parse(txt || '{}'); } catch (_) {}
       return t.token || t.Token || t.access_token || null;
     } else {
-      Logger.log('Auth failed body: ' + (txt ? txt.slice(0, 300) : ''));
+      Logger.log('Auth failed body: ' + (txt ? txt.slice(0, CACHE_DURATION_SECONDS) : ''));
       return null;
     }
   } catch (e) {
@@ -1467,7 +1494,7 @@ function sendSmsViaSmsSouthAfrica(to, body, senderId) {
     try { txt = res.getContentText(); } catch (_) {}
     Logger.log('SMS send code=' + code + ' payload=' + JSON.stringify(payload).slice(0, 200));
     if (code === 200 || code === 201 || code === 202) return true;
-    Logger.log('SMS send failed body: ' + (txt ? txt.slice(0, 300) : ''));
+    Logger.log('SMS send failed body: ' + (txt ? txt.slice(0, CACHE_DURATION_SECONDS) : ''));
     return false;
   } catch (e) {
     Logger.log('SMS send exception: ' + (e && e.message ? e.message : e));
@@ -1540,7 +1567,7 @@ function getAllCandidateDataSheetUrls_() {
 function randomToken_(len) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let out = '';
-  for (let i = 0; i < (len || 24); i++) out += chars.charAt(Math.floor(Math.random() * chars.length));
+  for (let i = 0; i < (len || TOKEN_LENGTH); i++) out += chars.charAt(Math.floor(Math.random() * chars.length));
   return out;
 }
 
@@ -1556,7 +1583,7 @@ function getBaseUrl_() {
   var props = PropertiesService.getScriptProperties();
   var propUrl = props.getProperty('EXEC_URL') || '';
   if (valid.test(propUrl)) {
-    cache.put('exec_url', propUrl, 300); // 5 min
+    cache.put('exec_url', propUrl, CACHE_DURATION_SECONDS); // 5 min
     return propUrl;
   }
 
@@ -1564,7 +1591,7 @@ function getBaseUrl_() {
   try {
     var svc = ScriptApp.getService().getUrl(); // may be empty in some contexts
     if (valid.test(svc)) {
-      cache.put('exec_url', svc, 300);
+      cache.put('exec_url', svc, CACHE_DURATION_SECONDS);
       return svc;
     }
   } catch (_) {}
@@ -1572,7 +1599,7 @@ function getBaseUrl_() {
   // 3) Hardcoded fallback (keep this in sync once, then rely on Script Property)
   var EXEC_URL_FALLBACK = 'https://script.google.com/macros/s/AKfycbyRQU3695cAbL1TvJQoXmLFGWCFLWeAckt6c5RL-cFtUlUhzDQUtwbpHsjXKxoQ6X9a/exec';
   if (valid.test(EXEC_URL_FALLBACK)) {
-    cache.put('exec_url', EXEC_URL_FALLBACK, 300);
+    cache.put('exec_url', EXEC_URL_FALLBACK, CACHE_DURATION_SECONDS);
     return EXEC_URL_FALLBACK;
   }
 
@@ -1625,7 +1652,7 @@ function ensureParentTokenForRow_(sheet, rowIndex, colIdx) {
   const rng = sheet.getRange(rowIndex, colIdx.iTok + 1);
   const v = String(rng.getValue() || '').trim();
   if (v) return v;
-  const tok = randomToken_(24);
+  const tok = randomToken_(TOKEN_LENGTH);
   rng.setValue(tok);
   return tok;
 }
@@ -1815,7 +1842,7 @@ function renderParentPage_(baseUrl, ctx, pctx, opts) {
       return HtmlService.createHtmlOutput(msg2).setTitle('InForm – Parent Portal');
     }
 
-    var incidents = getIncidentsForParent_(dataUrlForParent, pctx.learner, opts.days, opts.limit || 200);
+    var incidents = getIncidentsForParent_(dataUrlForParent, pctx.learner, opts.days, opts.limit || DEFAULT_INCIDENT_LIMIT);
 
     Logger.log('renderParentPage_: learner="%s" grade="%s" incidents=%s',
       pctx.learner, (pctx.grade || 'N/A'), incidents.length);
@@ -1832,7 +1859,7 @@ function renderParentPage_(baseUrl, ctx, pctx, opts) {
 
     t.downloadUrl = baseUrl + '?page=parent_dl&tok=' + encodeURIComponent(pctx.token)
       + '&days=' + encodeURIComponent(opts.days || 30)
-      + '&limit=' + encodeURIComponent(opts.limit || 200);
+      + '&limit=' + encodeURIComponent(opts.limit || DEFAULT_INCIDENT_LIMIT);
 
     return t.evaluate()
       .setTitle('InForm – Parent Portal')
@@ -2325,7 +2352,7 @@ const email = lc(emailParam || sessionEmail || urlAuthUser || 'unknown');
     const schools = configSS.getSheetByName('Schools');
     if (!schools) {
       log('Config ▸ Schools sheet not found');
-      cache.put(cacheKey, JSON.stringify(ctx), 300);
+      cache.put(cacheKey, JSON.stringify(ctx), CACHE_DURATION_SECONDS);
       return ctx;
     }
 
@@ -2353,7 +2380,7 @@ const email = lc(emailParam || sessionEmail || urlAuthUser || 'unknown');
       if (!schoolRow) {
         log(`Selected key "${selectedKey}" not active/not found → contact admin`);
         ctx.selectedSchoolKey = selectedKey;
-        cache.put(cacheKey, JSON.stringify(ctx), 300);
+        cache.put(cacheKey, JSON.stringify(ctx), CACHE_DURATION_SECONDS);
         return ctx;
       }
     } else {
@@ -2364,7 +2391,7 @@ const email = lc(emailParam || sessionEmail || urlAuthUser || 'unknown');
       );
       if (!schoolRow) {
         log(`No active school for domain "${domain}" → contact admin`);
-        cache.put(cacheKey, JSON.stringify(ctx), 300);
+        cache.put(cacheKey, JSON.stringify(ctx), CACHE_DURATION_SECONDS);
         return ctx;
       }
     }
@@ -2381,7 +2408,7 @@ const email = lc(emailParam || sessionEmail || urlAuthUser || 'unknown');
         // 4) Staff lookup in tenant Primary
     if (!ctx.dataSheetUrl) {
       log(`No Data Sheet URL for key "${ctx.selectedSchoolKey}"`);
-      cache.put(cacheKey, JSON.stringify(ctx), 300);
+      cache.put(cacheKey, JSON.stringify(ctx), CACHE_DURATION_SECONDS);
       return ctx;
     }
     try {
@@ -2398,7 +2425,7 @@ const email = lc(emailParam || sessionEmail || urlAuthUser || 'unknown');
       }
       if (!staff) {
         log(`No Staff sheet (tried: ${staffSheetNames.join(', ')}) in Primary for key "${ctx.selectedSchoolKey}"`);
-        cache.put(cacheKey, JSON.stringify(ctx), 300);
+        cache.put(cacheKey, JSON.stringify(ctx), CACHE_DURATION_SECONDS);
         return ctx;
       }
       
@@ -2447,7 +2474,7 @@ const email = lc(emailParam || sessionEmail || urlAuthUser || 'unknown');
     log(`Fatal in getUserContext_: ${err && err.stack || err}`);
   }
 
-  cache.put(cacheKey, JSON.stringify(ctx), 300);
+  cache.put(cacheKey, JSON.stringify(ctx), CACHE_DURATION_SECONDS);
   return ctx;
 }
 
