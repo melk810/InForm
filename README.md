@@ -10,26 +10,26 @@ InForm focuses on secure, simple workflows for logging and viewing incidents, at
 
 ## TL;DR (quick start)
 
-* **Deploy the web app** from Apps Script → **Deploy** → **New deployment** → type **Web app**.
-* Set **Execute as**: Me. Set **Who has access**: Your org or Anyone (as required by your rollout plan).
-* Copy the **Web app URL** (this is your `scriptUrl`).
-* Open **Code.gs** → set or confirm per-school config (names, colors, logos, form links, sheet URL).
-  → ⚠️ Best practice: move these into **Script Properties** or a **Config sheet** so they are not hard-coded.
-* Open **Home.html**, **Incidents.html**, **Login.html** and confirm links use `ctx.scriptUrl` and preserve `ctx.selectedSchoolKey`.
-* Test pages via `?page=home&school=<your-key>` and `?page=incidents&school=<your-key>`.
+* **Deploy the web app**: Apps Script → **Deploy** → **New deployment** → type **Web app**.
+
+  * **Execute as**: Me
+  * **Who has access**: Your org or Anyone (per rollout)
+* Copy the **Web app URL** (your `scriptUrl`).
+* In **Script Properties**, set:
+
+  * `INF_CONFIG_SHEET_URL` → your Config spreadsheet URL (optional; falls back to `CONFIG_SHEET_URL` constant).
+  * Optional SMS props (see **SMS configuration** below).
+* Confirm **Code.gs** globals (names, colors, sheet & form links).
+  **Best practice:** keep these in **Script Properties** or a **Config** sheet (not hard-coded).
+* Confirm all templates use **`ctx.scriptUrl`** and preserve **`ctx.selectedSchoolKey`** in links.
+* Test with `?page=home&school=<KEY>` and `?page=incidents&school=<KEY>`.
 
 ---
 
-## InForm – GAS project (raw file index)
-
-> Share these RAW links with LLMs or for quick diffing. They point straight to the latest contents of each file in this **GitHub repository**.
-
-### .md files
+## Raw file index (shareable links for AI/code reviews)
 
 **README.md**
 [https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/README.md](https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/README.md)
-
-### .gs files
 
 **Code.gs**
 [https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Code.gs](https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Code.gs)
@@ -39,8 +39,6 @@ InForm focuses on secure, simple workflows for logging and viewing incidents, at
 
 **Tests.gs**
 [https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Tests.gs](https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Tests.gs)
-
-### .html files
 
 **Footer.html**
 [https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Footer.html](https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Footer.html)
@@ -63,12 +61,7 @@ InForm focuses on secure, simple workflows for logging and viewing incidents, at
 **Styles.html**
 [https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Styles.html](https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Styles.html)
 
----
-
-#### Notes
-
-* These filenames are **case-sensitive**. Keep them exactly as shown.
-* If an assistant still “ignores” links, create a single “bundle” file (e.g. `AllFiles.md`) that inlines each file with headings and fenced code blocks.
+> Filenames are **case-sensitive** in Apps Script.
 
 ---
 
@@ -79,366 +72,371 @@ InForm focuses on secure, simple workflows for logging and viewing incidents, at
 3. [File map](#file-map)
 4. [Pages & routes](#pages--routes)
 5. [Global context (`ctx`) & config](#global-context-ctx--config)
-6. [Golden rules for navigation & safety](#golden-rules-for-navigation--safety)
-7. [Testing checklist (smoke test)](#testing-checklist-smoke-test)
-8. [Security model](#security-model)
-9. [Data model & Google Sheets](#data-model--google-sheets)
-10. [Deployments & environments](#deployments--environments)
-11. [Development workflow (GAS + clasp + Git)](#development-workflow-gas--clasp--git)
-12. [Coding standards & patterns](#coding-standards--patterns)
-13. [AutoSMS – SMS South Africa (current implementation)](#autosms--sms-south-africa-current-implementation) ← **new**
-
-    * [Script Properties](#script-properties)
-    * [Toggles](#toggles)
-    * [How it works (flow)](#how-it-works-flow)
-    * [Install the form submit trigger](#install-the-form-submit-trigger)
-    * [Manual resend for today](#manual-resend-for-today)
-    * [Parent portal links & masking](#parent-portal-links--masking)
-    * [Troubleshooting SMS](#troubleshooting-sms)
-14. [Troubleshooting (general)](#troubleshooting-general)
-15. [Scalability & multi-tenant guidance](#scalability--multi-tenant-guidance)
-16. [Contributing](#contributing)
-17. [AI collaborators: how to help](#ai-collaborators-how-to-help)
-18. [Glossary](#glossary)
-19. [Roadmap](#roadmap)
-20. [License](#license)
+6. [SMS configuration](#sms-configuration)
+7. [Auto-SMS: triggers & multi-tenant design](#auto-sms-triggers--multi-tenant-design)
+8. [Golden rules for navigation & safety](#golden-rules-for-navigation--safety)
+9. [Testing checklist (smoke test)](#testing-checklist-smoke-test)
+10. [Security model](#security-model)
+11. [Data model & Google Sheets](#data-model--google-sheets)
+12. [Deployments & environments](#deployments--environments)
+13. [Development workflow (GAS + clasp + Git)](#development-workflow-gas--clasp--git)
+14. [Coding standards & patterns](#coding-standards--patterns)
+15. [Troubleshooting & lessons learned](#troubleshooting--lessons-learned)
+16. [Scalability & multi-tenant guidance](#scalability--multi-tenant-guidance)
+17. [Contributing](#contributing)
+18. [AI collaborators: how to help](#ai-collaborators-how-to-help)
+19. [Glossary](#glossary)
+20. [Roadmap](#roadmap)
+21. [License](#license)
 
 ---
 
 ## Project goals
 
-* **Practical**: Give staff a clean, fast portal to log and view incidents and attendance.
-* **Safe by default**: Navigation that never "drops" context (e.g., school key), link-building that avoids broken routes, and templates that resist JS hoisting pitfalls.
-* **Scalable**: Onboard additional schools (multi-tenant) without rewriting core code.
-* **Sellable**: Clear separation of configuration vs. product logic, so this can be packaged for other institutions.
+* **Practical**: clean, fast portal for incidents/attendance.
+* **Safe by default**: navigation preserves school context; templates avoid hoisting pitfalls.
+* **Scalable**: add schools without code rewrites.
+* **Sellable**: configuration is separated from product logic.
 
 ---
 
 ## Architecture overview
 
-* **Frontend**: HTML templates rendered by GAS `HtmlService`:
+* **Frontend** (`HtmlService`):
 
-  * `Home.html` – welcome & role-based actions
-  * `Incidents.html` – filters, list, CSV/PDF export
+  * `Home.html` – landing & role actions
+  * `Incidents.html` – filters, list, CSV/PDF
   * `Login.html` – school selection & sign-in
-  * `Parents.html` – parent portal (ack page + learner incidents)
+  * `Parents.html` – parent portal
+* **Backend**:
 
-* **Backend**: `Code.gs` (routing via `doGet`, one-true `ctx`, SMS), `Helpers.gs` (utilities), `Tests.gs` (validation helpers).
-
-* **Data**: Google Sheets workbooks (per school) + Google Forms for responses.
-
-* **Routing**: `GET` with `page` param (`home`, `incidents`, `login`, `parent`, `ack`, `csv`, `report`).
-  Preserve state with `school=<key>` and other filters.
+  * `Code.gs` – routing (`doGet`), rendering (`renderPage_`), reports, SMS
+  * `Helpers.gs` – utilities (params, logs, sheets, URL building)
+* **Data**: Google Sheets (source of truth) + Forms for input
+* **Routing**: `?page=home`, `?page=incidents`, etc.; preserve `school=<KEY>`
 
 ---
 
 ## File map
 
-* **Code.gs** – routing (`doGet`), context assembly (`getUserContext_`, `ensurePrimaryWorkbookInCtx_`, `resolveSelectedSchoolKey_`), renderers (`renderPage_`, report builders), **SMS stack** (auth, send, handlers), parent portal, triggers.
-* **Helpers.gs** – utilities, logging, header matching, token/URL helpers, etc.
-* **Tests.gs** – template/route validator (`validateProject`) and small smoke checks.
-* **Templates** – `Home.html`, `Incidents.html`, `Login.html`, `Logout.html`, `Parents.html`, `Styles.html`, `Footer.html`.
+* `Code.gs` – main entry, ctx builder, parent portal, reports, SMS, triggers
+* `Helpers.gs` – header indexers, URL helpers, safe loggers, etc.
+* `Tests.gs` – diagnostics & validation helpers
+* `Home.html`, `Incidents.html`, `Login.html`, `Parents.html` – UI
+* `Styles.html`, `Footer.html` – shared styling/branding
 
 ---
 
 ## Pages & routes
 
-* `?page=home` → **Home**
-* `?page=incidents` → **Incidents**
-* `?page=login` → **Login**
-* `?page=logout` → **Logout → Login**
-* `?page=parent&tok=...` → **Parent Portal**
-* `?page=ack&tok=...&row=<row>` → Parent acknowledgement
-* `?page=report` → Build **PDF**, serve download page
-* `?page=csv` → Build **CSV**, serve download page
-* `?page=echo` / `?page=debug` → Diagnostics
+* `?page=home` → Home
+* `?page=incidents` → Incidents
+* `?page=login` → Login
+* `?page=logout` → Logout → Login
+* `?page=report` → PDF
+* `?page=csv` → CSV
+* `?page=parent&tok=...` → Parent portal
 
-**Common query params**
-
-* `school` → selected school key (must be preserved)
-* `days`, `grade`, `subject`, `teacher`, `learner`, `nature`, `limit` → Incidents filters
-* `authuser` → used for incognito/Sites flows
-* `clearCache=true` → bypass cached ctx
+Common params: `school`, `days`, `grade`, `subject`, `teacher`, `learner`, `nature`, `limit`, `clearCache=true`
 
 ---
 
 ## Global context (`ctx`) & config
 
-**One True `ctx`** is built once per request (inside `doGet` using `getUserContext_`) and passed to templates.
-It includes: user identity, role, branding, absolute `scriptUrl`, `selectedSchoolKey`, form links, `dataSheetUrl`.
+Every template receives a single `ctx` object, assembled once in `doGet` (One True Ctx):
 
-Key helpers in **Code.gs** you already use:
+```js
+{
+  userDisplayName: "Kroukamp E",
+  role: "manager",
+  schoolName: "Doornpoort High School",
+  schoolColor: "#1a4c8a",
+  schoolLogo: "https://.../logo.png",
+  dataSheetUrl: "https://docs.google.com/spreadsheets/…",
+  incidentFormUrl: "https://forms.gle/…",
+  attendanceFormUrl: "https://forms.gle/…",
+  scriptUrl: "https://script.google.com/macros/s/XXXXX/exec",
+  selectedSchoolKey: "DOORNPOORT",
+  authenticated: true
+}
+```
 
-* `ensurePrimaryWorkbookInCtx_(ctx)` – resolves primary **Data Sheet** via **CONFIG ▸ Schools**
-* `ensureScriptUrlOnCtx_(ctx)` – guarantees clean absolute base URL
-* `resolveSelectedSchoolKey_(ctx, e)` – respects `?school=`, remembers last selection per user
+**Config best practice:** keep per-school values in `Script Properties` or a `Config` spreadsheet (tab **Schools**). Code already prefers `INF_CONFIG_SHEET_URL` property and falls back to `CONFIG_SHEET_URL`.
 
-**Config best practice**: put values in **Script Properties** or a **Config sheet** (you already do this via `CONFIG_SHEET_URL` and the **Schools** tab).
+---
+
+## SMS configuration
+
+**Provider:** SMS South Africa (already integrated).
+
+### Script Properties (recommended)
+
+Set these in **Extensions → Apps Script → Project Settings → Script properties**:
+
+* `SMS_SA_USERNAME`
+* `SMS_SA_PASSWORD`
+* `SMS_SA_AUTH_URL` (e.g., `https://rest.smsportal.com/v1/Authentication`)
+* `SMS_SA_SEND_SMS_URL` (e.g., `https://rest.smsportal.com/v1/BulkMessages/Send`)
+* `SMS_SA_DEFAULT_SENDER_ID` (your sender ID)
+* `WEB_APP_URL` (optional: canonical /exec URL)
+* `WEB_APP_BASE` (optional: returns /dev in test deployments)
+* `INF_CONFIG_SHEET_URL` (optional: overrides `CONFIG_SHEET_URL`)
+
+### Safety toggles
+
+In `Code.gs`:
+
+```js
+const AUTO_SMS_ENABLED = true; // master kill-switch for all automated sending paths
+
+// DRY-RUN: true = NO real SMS (logs only), false = live sends via UrlFetchApp
+const DRY_RUN = true;
+```
+
+**Enforcement details (already in code):**
+
+* `sendSmsViaSmsSouthAfrica` returns early with `[DRY_RUN]` log—no HTTP call.
+* `getSmsSouthAfricaAuthToken` returns a fake token on `[DRY_RUN]`—no auth call.
+* Batch sender marks rows as `SMS Sent` in DRY-RUN so flows can be tested end-to-end without cost.
+
+> If you ever see live SMS while `DRY_RUN=true`, there is almost certainly an **old trigger in another project** still firing. See **Troubleshooting & lessons learned**.
+
+---
+
+## Auto-SMS: triggers & multi-tenant design
+
+### 1) Form-submit triggers (recommended primary path)
+
+**One stand-alone project** can own **many schools**. Each school’s **Primary spreadsheet** gets **its own installable “From spreadsheet → On form submit” trigger** targeting your handler:
+
+```js
+// handler name must be exactly this:
+function onIncidentFormSubmit(e) { /* ...existing code... */ }
+```
+
+Use these utilities (already in `Code.gs`) to **create/verify** a trigger **per school**:
+
+```js
+// Ensure one trigger for one spreadsheet ID
+function ensureIncidentSubmitTriggerFor_(ssId) { /* … */ }
+
+// Scan CONFIG ▸ Schools and install/sync triggers for all active schools
+function installIncidentSubmitTriggersForAllSchools_() { /* … */ }
+```
+
+**Run once**: `installIncidentSubmitTriggersForAllSchools_()`
+It reads `CONFIG_SHEET_URL → Schools` and ensures **exactly one** trigger per `Data Sheet URL`.
+
+Why this pattern?
+
+* Near-real-time sending (fires on each submission)
+* No double-sends (handler checks & writes “Sent to Parent”)
+* Central project, many spreadsheets
+
+### 2) Optional queue runner (time-based, multi-tenant)
+
+If you want a catch-up queue (e.g., every 5 minutes), use **one** time-based trigger (single cron) that iterates all active schools and calls the same batch logic per sheet:
+
+```js
+function autosmsdespatch_() { /* multi-tenant loop over Schools */ }
+function sendUnsentSMSTodayForSheet_(sheetUrl) { /* batch sender for one sheet */ }
+```
+
+* Honors `DRY_RUN` and `AUTO_SMS_ENABLED`.
+* Processes **today’s** unsent rows, marking `SMS Sent` on success.
+* Avoids creating a separate cron per school.
+
+> You can run **both**: form-submit triggers for instant sends **and** the queue to catch anything missed.
 
 ---
 
 ## Golden rules for navigation & safety
 
-1. Always link with `ctx.scriptUrl` (absolute) **and** include `&school=...`.
-2. Clear / Back buttons must **preserve** the school key.
-3. Hoist-safe templates: do **not** `var`-redeclare server-injected globals.
-4. Escape iframes/site containers with `<base target="_top">`.
-5. Encode query params (`encodeURIComponent`).
-6. Use `Logger.log` for server logs (you already do; SMS logs mask tokens/URLs).
+1. **Always** link with `ctx.scriptUrl` and include `&school=...`.
+2. **Clear** and **Back** buttons must preserve the `school` param.
+3. Use **hoist-safe** defaults in templates; don’t redeclare with `var`.
+4. Every HTML includes `<base target="_top">` to break out of Sites/iframes when needed.
+5. Always `encodeURIComponent` query params when building URLs.
+6. Server logs: `Logger.log` for everything important (ctx, routes, tokens are **masked**).
 
 ---
 
 ## Testing checklist (smoke test)
 
-* `?page=home&school=TEST` renders branding (logo/color) and correct links.
-* `?page=incidents&school=TEST` shows rows and respects filters.
+1. Open `?page=home&school=TEST` → branding loads.
+2. `?page=incidents&school=TEST` shows incidents.
 
-  * **Clear** & **Back** keep `&school=TEST`.
-* `?page=logout` renders Login (no blank page).
-* `?page=parent&tok=...` renders learner incidents (masked in logs).
-* PDF/CSV export pages redirect to Drive file and show **Back Home** & **Back to Incidents** buttons.
+   * Filters keep `school`.
+   * **Clear** keeps `school`.
+   * **Back to Home** keeps `school`.
+3. **Parent portal**: generate a token for a learner, visit `?page=parent&tok=…`.
+4. **Reports**: `?page=report` (PDF) and `?page=csv` (CSV).
+5. **SMS DRY-RUN**:
+
+   * Set `DRY_RUN=true`.
+   * Submit a test incident.
+   * Expect `[DRY_RUN] Would send SMS…` in logs; **no live SMS**.
+   * “Sent to Parent” becomes `SMS Sent` (so the flow is testable end-to-end).
+6. **Install triggers for all schools**: run `installIncidentSubmitTriggersForAllSchools_()` and verify under **Triggers** that each school’s spreadsheet ID has exactly one `onIncidentFormSubmit`.
 
 ---
 
 ## Security model
 
-* **Least privilege** access to Sheets and Drive.
-* Parent links use random tokens (length = `TOKEN_LENGTH`).
-* Logs mask tokens and portal URLs (via `maskToken_`, `maskUrlToken_`).
-* Parent acknowledgement writes only to the school’s **Data Sheet** where the token was found.
-* Avoid sandboxing combinations that re-enable XSS in iframes; templates are kept simple and server-rendered.
+* **Least privilege** access to Sheets & Drive.
+* Avoid dangerous iframe combinations (no `allow-scripts + allow-same-origin` together).
+* Escape template variables in HTML `<?= ?>`.
+* Parent tokens are opaque; logs mask token query parameters.
 
 ---
 
 ## Data model & Google Sheets
 
-* **CONFIG_SHEET_URL** – central “Schools” config (branding, Data Sheet URL, form links, active flag, domains).
-* **Data Sheet (per school)** – tabs:
+* **Incidents** tab: typical columns
+  `Timestamp, StaffEmail, Combined Learner, Grade, Subject, Teacher, Nature1, Nature2, Sent to Parent, …`
+* **Contacts** tab: `Learner Contacts` with a `Token` column (auto-generated on demand).
+* **Staff** tab: `Email, Display Name, Role, (School Key optional)`
 
-  * **Form Responses 1** – incident logs (your default via `RESPONSES_SHEET_NAME`)
-  * **Learner Contacts** – tokens + parent contact details
-  * **Staff** – staff roster, role, display names
-* Server-side filtering and batching via `getValues()`.
+Searches are resilient to header variations using flexible indexers.
 
 ---
 
 ## Deployments & environments
 
-* Keep **staging** and **production** web app deployments.
-* `getWebAppUrl_()` and `getBaseScriptUrl_()` normalize to current deployment; `ensureScriptUrlOnCtx_()` makes all links absolute.
-* Build stamp: `BUILD` (visible in logs/HTML when surfaced).
+* Keep **staging** and **production** deployments.
+* Use `WEB_APP_URL` and `WEB_APP_BASE` properties to normalize links.
+* Version and tag releases so everything maps cleanly to Apps Script deployments.
 
 ---
 
 ## Development workflow (GAS + clasp + Git)
 
-* Use [clasp](https://github.com/google/clasp) to sync with GitHub.
-* Branch → edit → test → PR → deploy.
-* Tag semver releases to align Script deployments with Git commits.
+* [Clasp](https://github.com/google/clasp) to sync code with GitHub.
+* Branch → edit → PR → deploy.
+* Tag deployments (`v1.2.3`) for traceability.
 
 ---
 
 ## Coding standards & patterns
 
-* Templates are “dumb”; logic lives in `.gs`.
-* Preserve `school` across navigation.
-* Use absolute URLs; never hardcode `/exec` in templates—use `ctx.scriptUrl`.
-* Centralize helpers and keep functions small and composable.
-* Add validators (`validateProject`) to catch template route mismatches.
+* Templates are “dumb”; `.gs` holds logic.
+* Preserve the `school` query param across all navigation.
+* One True `ctx` object built once per request.
+* Centralize helpers (headers, URLs, logging).
+* Small, focused unit tests in `Tests.gs`.
 
 ---
 
-## AutoSMS – SMS South Africa (current implementation)
+## Troubleshooting & lessons learned
 
-Your code already contains a **complete, production-ready** path for **immediate SMS sending** on each incident submission, plus a **manual resend** tool for unsent entries. This section documents the exact behavior that your current repository implements.
+### Live SMS while `DRY_RUN=true`?
 
-### Script Properties
+**Root cause** 99% of the time: **another Apps Script project** still has an **installable trigger** on the same spreadsheet.
+**Fix:**
 
-Set these in **Apps Script → Project Settings → Script Properties**:
+1. In the spreadsheet: **Extensions → Apps Script → Triggers** → remove all **other** projects’ `onFormSubmit` triggers.
+2. In *this* project: run `installIncidentSubmitTriggersForAllSchools_()` again (self-heals).
+3. Re-test a submission; logs should show `[DRY_RUN] Would send…`.
 
-```
-SMS_SA_USERNAME            = <your-username>
-SMS_SA_PASSWORD            = <your-password>
-SMS_SA_AUTH_URL            = https://<provider-auth-endpoint>   // from your SMS SA account
-SMS_SA_SEND_SMS_URL        = https://<provider-send-endpoint>   // from your SMS SA account
-SMS_SA_DEFAULT_SENDER_ID   = InForm                             // or your approved sender ID
-```
+### Queue didn’t run / “not queued”?
 
-> These map 1:1 to `getSmsConfig_()` and are consumed by `getSmsSouthAfricaAuthToken()` and `sendSmsViaSmsSouthAfrica()`.
+* Ensure you created **one** time-based trigger on `autosmsdespatch_` (if you actually want the queue).
+* The queue only processes **today’s** unsent rows.
+* Check logs for `[Queue]` lines and per-sheet results.
 
-### Toggles
+### “This sheet is still using the old project”
 
-Defined near the top of **Code.gs**:
+A spreadsheet “listens” to whichever project has an **installable trigger** for it. If you’ve had multiple copies during development:
 
-```js
-const AUTO_SMS_ENABLED = true;           // master switch
-const DRY_RUN = true;                    // true = simulate (no real SMS); set false for live
-const MAX_SMS_LEN = 159;                 // cap & smart-trim for nature line
-const PARENT_LINKS_USE_SHORTENER = true; // use TinyURL/is.gd fallback helper
-const SMS_STATUS_COLUMN = 'Sent to Parent'; // status column in Form Responses
-```
+* Remove triggers in the **old** projects.
+* Run `installIncidentSubmitTriggersForAllSchools_()` in the **current** project.
 
-Other relevant constants:
+### `AUTO_SMS_ENABLED` vs `DRY_RUN`
 
-```js
-const RESPONSES_SHEET_NAME = 'Form Responses 1';
-const CONTACT_SHEET_NAME   = 'Learner Contacts';
-const COMBINED_LEARNER_COLUMN = 'Combined Learner';
-const STATUS_SENT = 'SMS Sent';
-const STATUS_FAILED_PREFIX = 'Failed - ';
-```
+* `AUTO_SMS_ENABLED=false` → **no** automated sending/marking at all.
+* `DRY_RUN=true` → **no real SMS**, but flows run and the row is marked `SMS Sent` for end-to-end testing.
 
-### How it works (flow)
+### Owners & guardrails
 
-1. **Teacher submits incident** (Google Form response lands in **Form Responses 1**).
-2. Installable **on form submit trigger** (see below) calls:
-
-   * `onIncidentFormSubmit(e)`
-3. Handler logic (as implemented):
-
-   * Reads the new row, dedupes if `"Sent to Parent"` already says “sent”
-   * Looks up **parent phone** & **portal token** in **Learner Contacts** using `getParentPortalLinkAndPhoneForLearner_(learner, contactsBookUrl)`
-
-     * Ensures token exists (creates if blank)
-     * Builds a **parent portal link** → optional short link if `PARENT_LINKS_USE_SHORTENER`
-     * Normalizes ZA phone numbers (e.g., `082…` → `+2782…`)
-   * Builds SMS body via `buildIncidentSmsMessage_()`
-
-     * Header: `DHS Incident - <SURNAME INITIAL> <YYYY-MM-DD>`
-     * Optional `T:` teacher initial
-     * Optional `N:` nature (auto-trimmed to fit `MAX_SMS_LEN`)
-     * Includes “More Detail” + portal URL when available (`SEND_ACK_LINK` respected)
-   * Sends via `sendSmsViaSmsSouthAfrica(to, message, senderId)`
-
-     * Fetches a **bearer token** using `getSmsSouthAfricaAuthToken()` (Basic auth → token)
-     * Posts to **SMS_SA_SEND_SMS_URL** with JSON payload
-   * Updates **Sent to Parent** to:
-
-     * `SMS Sent` on success
-     * `Failed - <reason>` on failure
-
-> All logs **mask** tokens and URLs using your masking helpers.
-
-### Install the form submit trigger
-
-Run this once from the Script Editor (or put behind an admin action):
-
-```js
-installIncidentSubmitTrigger_();
-```
-
-What it does:
-
-* Locates the correct **Data Sheet** (using your `getUserContext_()` and `ctx.dataSheetUrl`)
-* Removes any existing `onIncidentFormSubmit` triggers for safety
-* Creates a new **installable onFormSubmit trigger** bound to that spreadsheet
-
-### Manual resend for today
-
-Use your built-in tool when some rows are left **unsent** (e.g., transient provider outage):
-
-```js
-sendUnsentSMSToday();
-```
-
-Behavior:
-
-* Scans **Form Responses 1** for **today’s** timestamp
-* Skips rows where **Sent to Parent** already contains “sent”
-* Repeats the same lookup/message/send flow as the submit handler
-* Updates status per-row and shows a summary alert (`X sent, Y failed`)
-
-### Parent portal links & masking
-
-* `getParentPortalLinkAndPhoneForLearner_`:
-
-  * Ensures a **random token** exists in **Learner Contacts** for the learner row
-  * Constructs the **parent portal** URL: `https://.../exec?page=parent&tok=<TOKEN>`
-  * Shortens link if configured; returns both long/short for flexibility
-* Logging:
-
-  * Tokens are masked with `maskToken_()`
-  * URLs are masked with `maskUrlToken_()` so logs never leak `tok=...`
-
-### Troubleshooting SMS
-
-Check server logs for these markers:
-
-* **`onIncidentFormSubmit triggered`** – the handler ran.
-* **`Parent portal link info: {"ok":true, "phone":"(present)", "urlMasked":"..."}`** – lookup worked.
-* **`SMS send code=200/201/202`** – provider accepted the message.
-* **`SMS send failed body: ...`** – inspect error payload (token invalid, senderId mismatch, etc.).
-* **`Failed - No valid phone`** – phone number missing or invalid (must start with `+`).
-* Ensure Script Properties keys are correct and URLs (`SMS_SA_AUTH_URL`, `SMS_SA_SEND_SMS_URL`) match your provider settings.
-
----
-
-## Troubleshooting (general)
-
-* **Logout renders a blank page** → your code renders Login **directly** on `?page=logout`; confirm `renderPage_('login', ...)` is reachable.
-* **Incidents empty** → verify the tab is named exactly `"Form Responses 1"` (or your fallback logic finds a `Timestamp` column).
-* **Clear/Back drops school** → ensure links carry `&school=<?= encodeURIComponent(ctx.selectedSchoolKey||'') ?>`.
-* **Parent link 403** → check Drive/Sheets sharing and token validity; tokens are per-row in **Learner Contacts**.
-* **Exec URL wrong** → set `WEB_APP_URL` / `WEB_APP_BASE` in Script Properties or redeploy and re-run `getWebAppUrl_()` helpers.
+If you have a helper like `__ownerGuardOrExit_()` that ensures only the “owner” executes time-based tasks, keep it at the **top of entry points** (`autosmsdespatch_`, etc.) so stray triggers never do work.
 
 ---
 
 ## Scalability & multi-tenant guidance
 
-* Tenant = `selectedSchoolKey`.
-* **CONFIG ▸ Schools** tab drives branding, primary **Data Sheet**, and form links per school.
-* `getUserContext_()` already handles:
+* Tenant key: `selectedSchoolKey`.
+* Config per school in **CONFIG ▸ Schools** (Active, Data Sheet URL, forms, branding).
+* **Triggers:**
 
-  * explicit `?school=`
-  * fallback by email domain
-  * staff verification inside the tenant **Data Sheet**
-* If you later need **per-school SMS credentials** (instead of global Script Properties), add keyed properties such as:
-
-  * `SMS_SA_SCHOOL_<KEY>_TOKEN`, `SMS_SA_SCHOOL_<KEY>_SENDER_ID`
-    …and pick them inside `getSmsConfig_()` based on `ctx.selectedSchoolKey`. (This is an optional future enhancement; current code uses **global** credentials.)
+  * **One form-submit trigger per school spreadsheet** (created by `installIncidentSubmitTriggersForAllSchools_()`).
+  * **Optional single queue trigger** (`autosmsdespatch_`) that loops through all active schools.
+* Parent links/tokenization are per tenant and look up the **same workbook** where the token is stored (no cross-school leakage).
 
 ---
 
 ## Contributing
 
-* Branch → commit → PR.
-* Use descriptive commit messages: `feat(sms): log masked URL`, `fix(nav): preserve school on back`.
+* Branch, commit, PR.
+* Commit style: `feat(incidents): add pagination`, `fix(sms): respect DRY_RUN in batch path`, etc.
 
 ---
 
 ## AI collaborators: how to help
 
-* **Do not** hardcode `/exec` in templates—always use `ctx.scriptUrl`.
-* Keep “One True `ctx`” sacred: build once in `doGet`, never reconstruct in HTML.
-* When adjusting **Incidents** or **Parents** pages, verify Clear/Back keep `&school=`.
-* Any SMS edits must keep:
-
-  * token/URL masking in logs
-  * status updates in **Form Responses 1**
-  * Script Properties-based configuration
+* Return **full files** for HTML/templates when editing.
+* Never hardcode URLs—use `ctx.scriptUrl`, keep `school` param.
+* Keep `DRY_RUN` and `AUTO_SMS_ENABLED` behavior intact.
+* Validate **both** Clear & Back buttons.
+* Add meaningful `Logger.log` breadcrumbs.
 
 ---
 
 ## Glossary
 
-* **Tenant** – a school using the app.
-* **Data Sheet** – the primary per-school spreadsheet containing “Form Responses 1”, “Learner Contacts”, “Staff”.
-* **CONFIG** – central spreadsheet referenced by `CONFIG_SHEET_URL` (brand, URLs, active flags).
+* **Installable trigger**: a project-owned trigger attached to a spreadsheet (or time-based).
+* **Form-submit trigger**: fires when a linked Form submits a new row to a spreadsheet.
+* **Queue**: a time-based runner that batch-processes unsent rows.
 
 ---
 
 ## Roadmap
 
-* Optional **per-school SMS credentials** (overrides of global props).
-* Admin UI for script/tenant configuration.
-* Additional unit tests around header matching and parent token issuance.
-* Server-side pagination for very large incident logs.
+* Admin UI for **Schools** config (branding, forms, primary sheet).
+* Structured logging helper with correlation IDs.
+* Server-side pagination for large incident lists.
+* Finer role-based access checks.
+* More unit tests around tokenization and DRY-RUN enforcement.
 
 ---
 
 ## License
 
 MIT (or institution-specific) — update as required.
+
+---
+
+## Appendix – trigger utilities (for reference)
+
+> These functions are already included in **Code.gs**. They’re listed here so operators know what to run.
+
+```js
+// A) Install/sync per-school form-submit triggers (recommended)
+function installIncidentSubmitTriggersForAllSchools_() { /* scans CONFIG.Schools and ensures a trigger per Data Sheet URL */ }
+
+// B) Optional: multi-tenant queue runner (single cron)
+function autosmsdespatch_() { /* iterates active schools and calls sendUnsentSMSTodayForSheet_ */ }
+
+// C) Parameterized batch sender for one sheet (used by queue)
+function sendUnsentSMSTodayForSheet_(sheetUrl) { /* sends today’s unsent rows; honors DRY_RUN & AUTO_SMS_ENABLED */ }
+```
+
+**Run order (first setup):**
+
+1. Set Script Properties (CONFIG & SMS).
+2. Deploy web app.
+3. Run `installIncidentSubmitTriggersForAllSchools_()` once.
+4. (Optional) Add one time-based trigger for `autosmsdespatch_` (e.g., every 5 minutes).
+5. Test with `DRY_RUN=true` until happy; then set `DRY_RUN=false` for live sending.
 
 ---
 
