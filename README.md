@@ -61,6 +61,9 @@ InForm focuses on secure, simple workflows for logging and viewing incidents, at
 **Styles.html**
 [https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Styles.html](https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Styles.html)
 
+**AutoSms.gs**
+[https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/AutoSmsSa.gs]
+
 > Filenames are **case-sensitive** in Apps Script.
 
 ---
