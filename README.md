@@ -62,7 +62,7 @@ InForm focuses on secure, simple workflows for logging and viewing incidents, at
 [https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Styles.html](https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/Styles.html)
 
 **AutoSms.gs**
-[https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/AutoSmsSa.gs]
+https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/AutoSmsSa.gs
 (https://raw.githubusercontent.com/melk810/InForm/refs/heads/main/AutoSmsSa.gs)
 
 **Guard_Sa.gs**
