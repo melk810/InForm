@@ -17,7 +17,7 @@ const STATUS_FAILED_PREFIX = 'Failed - ';
 const AUTO_SMS_ENABLED = true;
 const SEND_ACK_LINK = true;
 // Toggle: avoid shorteners for parent links (some SMS apps strip query params)
-const PARENT_LINKS_USE_SHORTENER = true;
+const PARENT_LINKS_USE_SHORTENER = false;
 const MAX_SMS_LEN = 159;
 
 // ===============================
@@ -59,6 +59,17 @@ const UI_STRINGS = {
 const DEFAULT_TIMEZONE = 'Africa/Johannesburg';
 const DATE_FORMAT = 'yyyy-MM-dd';
 const DATETIME_FORMAT = 'yyyy-MM-dd HH:mm:ss';
+
+var AUTOSMS_OUTBOX_NAME  = 'Outbox';
+var AUTOSMS_MAX_PER_RUN  = 20;
+var TEST_MINIMAL_QUEUE    = false;   // do not call provider in this phase
+var REQUIRE_ACTIVE_SCHOOLS = false; // <-- add this line
+// === SMS delivery mode ===
+// Safety-first default. Options: 'QUEUED' | 'IMMEDIATE'
+var AUTOSMS_DEFAULT_MODE = 'IMMEDIATE';
+
+// If true, even IMMEDIATE sends will be written to Outbox as an audit trail
+var LOG_IMMEDIATE_TO_OUTBOX = true;
 
 // Add helper function
 function formatDate_(date, format) {
@@ -576,6 +587,8 @@ if (__preKey && !ctx.selectedSchoolKey) {
   // Resolver didn’t find a key; keep the one we trusted earlier (from URL/auth)
   ctx.selectedSchoolKey = __preKey;
 }
+
+ctx = finalizeCtx_(ctx, scriptUrl);
 
     // (Optional) Normalize a boolean to avoid surprises
     if (typeof ctx.authenticated !== 'boolean') {
@@ -1551,6 +1564,10 @@ function buildIncidentSmsMessage_(learner, dateStr, teacher, nature, parentPorta
 }
 
 function getSmsSouthAfricaAuthToken() {
+  if (typeof DRY_RUN !== 'undefined' && DRY_RUN) {
+  Logger.log('[DRY_RUN] Skipping auth token request.');
+  return 'dry-run-token';
+}
   var cfg = getSmsConfig_();
   if (!cfg.username || !cfg.password || !cfg.authUrl) return null;
 
@@ -1594,6 +1611,11 @@ function getSmsConfig_() {
 function sendSmsViaSmsSouthAfrica(to, body, senderId) {
   if (!to || !body) return false;
   if (to.toString().trim().charAt(0) !== '+') return false;
+
+  if (typeof DRY_RUN !== 'undefined' && DRY_RUN) {
+    Logger.log('[DRY_RUN] Would send SMS to %s: %s', to, String(body).slice(0, 200));
+    return true;
+  }
 
   var cfg = getSmsConfig_();
   var token = getSmsSouthAfricaAuthToken();
@@ -2083,8 +2105,19 @@ function getParentPortalLinkAndPhoneForLearner_(learnerName, contactsBookUrl) {
 // ========================================
 // 🚨 AUTO SMS ON FORM SUBMIT HANDLER & TRIGGER
 // IMPORTANT: The handler name must match the trigger!
-function onIncidentFormSubmit(e) {
+function onIncidentFormSubmit_BACKUP(e) {
+  var props = PropertiesService.getScriptProperties();
+  var ownerId = props.getProperty('OWNER_SCRIPT_ID') || '';
+  try {
+    // Only proceed if this exact project is the owner
+    if (ownerId && ScriptApp.getScriptId && ScriptApp.getScriptId() !== ownerId) {
+      Logger.log('[GUARD] Not owner project. Aborting.');
+      return;
+    }
+  } catch (_) {}
+
   Logger.log('onIncidentFormSubmit triggered');
+
   try {
     if (!AUTO_SMS_ENABLED) {
       Logger.log('AUTO_SMS_ENABLED is false, exiting');
@@ -2097,23 +2130,66 @@ function onIncidentFormSubmit(e) {
       return;
     }
 
+    // ================================
+    // LOCK SCHOOL KEY ONCE (NO RE-FIND)
+    // ================================
+    // Prefer the key already resolved earlier in this execution (ctx/selectedSchoolKey)
+    var priorKey =
+      (typeof ctx !== 'undefined' && ctx && ctx.selectedSchoolKey) ||
+      (typeof selectedSchoolKey !== 'undefined' && selectedSchoolKey) ||
+      '';
+
+    // If priorKey wasn’t set, try a single, safe fallback: Config map by Spreadsheet ID
+    var ss = (e && e.source) || (sheet && sheet.getParent()) || null;
+    var schoolKey = String(priorKey || '').trim();
+    if (!schoolKey) {
+      try {
+        var map = readSchoolsMapFromConfig_(); // { KEY: { ssId: '...', ... }, ... }
+        var ssId = ss && ss.getId ? ss.getId() : '';
+        if (ssId) {
+          for (var k in map) if (map[k] && map[k].ssId === ssId) { schoolKey = k; break; }
+        }
+      } catch (err) {
+        Logger.log('[SchoolResolve] Config lookup failed: ' + err);
+      }
+    }
+
+    if (!schoolKey) {
+      var statusNoKey = 'ERROR Missing schoolKey — no prior key and no Config match for ssId=' +
+                        (ss && ss.getId ? ss.getId() : '') + ' name=' +
+                        (ss && ss.getName ? ss.getName() : '');
+      // We set the cell only if we know where to write
+      const headers0 = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      const iSmsCol0 = findHeaderIndex_(headers0, [SMS_STATUS_COLUMN]);
+      const rowIndex0 = e.range.getRow();
+      if (typeof iSmsCol0 === 'number' && iSmsCol0 >= 0 && rowIndex0) {
+        sheet.getRange(rowIndex0, iSmsCol0 + 1).setValue(statusNoKey);
+      }
+      Logger.log(statusNoKey);
+      return;
+    }
+
+    Logger.log('[SchoolResolve] final schoolKey="%s"', schoolKey);
+
+    // ================================
+    // ROW + MESSAGE PREP
+    // ================================
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     const rowIndex = e.range.getRow();
-    const rowVals = sheet.getRange(rowIndex, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const rowVals  = sheet.getRange(rowIndex, 1, 1, sheet.getLastColumn()).getValues()[0];
 
-    const iTs = findHeaderIndex_(headers, ['Timestamp']);
+    const iTs      = findHeaderIndex_(headers, ['Timestamp']);
     const iLearner = findHeaderIndex_(headers, [COMBINED_LEARNER_COLUMN, 'Combined Learner']);
     const iTeacher = findHeaderIndex_(headers, ['Teacher Surname, Name', 'Teacher', 'Teacher Name']);
     const iNature1 = findHeaderIndex_(headers, ['Nature of Learner Misconduct', 'Nature of misconduct', 'Nature']);
     const iNature2 = findHeaderIndex_(headers, ['Other misconduct', 'Description of incident', 'Other / description']);
-    const iSmsCol = findHeaderIndex_(headers, [SMS_STATUS_COLUMN]);
+    const iSmsCol  = findHeaderIndex_(headers, [SMS_STATUS_COLUMN]);
 
     const learner = iLearner >= 0 ? String(rowVals[iLearner] || '').trim() : '';
     if (!learner) {
       Logger.log('No learner found, returning');
       return;
     }
-
     Logger.log('Learner found: ' + learner);
 
     // Avoid duplicate sends
@@ -2125,7 +2201,7 @@ function onIncidentFormSubmit(e) {
       }
     }
 
-    // Prefer the same workbook that fired the event
+    // Prefer the same workbook that fired the event for contacts lookup
     const contactsBookUrl = e && e.source && e.source.getUrl ? e.source.getUrl() : '';
     const info = getParentPortalLinkAndPhoneForLearner_(learner, contactsBookUrl);
 
@@ -2137,8 +2213,10 @@ function onIncidentFormSubmit(e) {
 
     if (!info.ok || !info.phone || info.phone.charAt(0) !== '+') {
       Logger.log('Failed to retrieve valid phone or parent portal link');
-      if (iSmsCol >= 0) sheet.getRange(rowIndex, iSmsCol + 1)
-        .setValue(STATUS_FAILED_PREFIX + (info.reason || 'No valid phone'));
+      if (iSmsCol >= 0) {
+        sheet.getRange(rowIndex, iSmsCol + 1)
+             .setValue(STATUS_FAILED_PREFIX + (info.reason || 'No valid phone'));
+      }
       return;
     }
 
@@ -2147,6 +2225,7 @@ function onIncidentFormSubmit(e) {
       Session.getScriptTimeZone() || 'Africa/Johannesburg',
       'yyyy-MM-dd'
     ) : '';
+
     const teacher = iTeacher >= 0 ? String(rowVals[iTeacher] || '').trim() : '';
     const n1 = iNature1 >= 0 ? String(rowVals[iNature1] || '').trim() : '';
     const n2 = iNature2 >= 0 ? String(rowVals[iNature2] || '').trim() : '';
@@ -2160,14 +2239,32 @@ function onIncidentFormSubmit(e) {
     // Log masked URL inside message
     Logger.log('SMS Message: ' + msg.replace(parentPortalLink, maskUrlToken_(parentPortalLink)));
 
-    // Send the SMS
-    const ok = sendSmsViaSmsSouthAfrica(info.phone, msg);
-    if (ok && iSmsCol >= 0) {
-      sheet.getRange(rowIndex, iSmsCol + 1).setValue(STATUS_SENT);
-      Logger.log('SMS sent successfully');
-    } else if (iSmsCol >= 0) {
-      sheet.getRange(rowIndex, iSmsCol + 1).setValue(STATUS_FAILED_PREFIX + 'Gateway error');
-      Logger.log('Failed to send SMS');
+    // ================================
+    // SEND or QUEUE (based on AUTO_SMS_USE_QUEUE)
+    // ================================
+    if (AUTO_SMS_USE_QUEUE) {
+      // optional, school-specific sender id via Script Properties
+      var allProps = PropertiesService.getScriptProperties().getProperties();
+      var senderId =
+        (allProps['SMS_SA_SCHOOL_' + String(schoolKey).toUpperCase() + '_SENDER_ID']) ||
+        (allProps['SMS_SA_SENDER_ID']) || '';
+
+      queueSmsSa_(schoolKey, info.phone, msg, {
+        senderId: senderId,
+        meta: { source: 'onIncidentFormSubmit', rowIndex: rowIndex }
+      });
+
+      if (iSmsCol >= 0) sheet.getRange(rowIndex, iSmsCol + 1).setValue('QUEUED');
+      Logger.log('Queued SMS for ' + schoolKey + ' to ' + info.phone);
+    } else {
+      const ok = sendSmsViaSmsSouthAfrica(info.phone, msg);
+      if (ok && iSmsCol >= 0) {
+        sheet.getRange(rowIndex, iSmsCol + 1).setValue(STATUS_SENT);
+        Logger.log('SMS sent successfully');
+      } else if (iSmsCol >= 0) {
+        sheet.getRange(rowIndex, iSmsCol + 1).setValue(STATUS_FAILED_PREFIX + 'Gateway error');
+        Logger.log('Failed to send SMS');
+      }
     }
 
   } catch (err) {
@@ -2175,6 +2272,237 @@ function onIncidentFormSubmit(e) {
     try { console.error('onIncidentFormSubmit failed:', err); } catch (_) {}
   }
 }
+
+/**
+ * Installable trigger: From spreadsheet → On form submit
+ * One trigger per school Responses spreadsheet pointing to THIS project.
+ */
+function onIncidentFormSubmit_BACKUPQUEUE(e) {
+  try {
+    logHelper('onIncidentFormSubmit triggered');
+
+    if (!e || !e.source || !e.range) {
+      logHelper('[Form] Missing event context; abort.');
+      return;
+    }
+
+    if (!AUTO_SMS_ENABLED) {
+      logHelper('[Form] AUTO_SMS_ENABLED=false; skipping any send/queue.');
+      return;
+    }
+
+    var ss   = e.source;
+    var sh   = e.range.getSheet();
+    var row  = e.range.getRow();
+    var last = sh.getLastColumn();
+
+    // Resolve school
+    var schoolKey = resolveSchoolKeyForResponses_(sh);
+    logHelper('[Form] schoolKey=' + schoolKey);
+
+    if (typeof REQUIRE_ACTIVE_SCHOOLS !== 'undefined' && REQUIRE_ACTIVE_SCHOOLS) {
+      var activeSet = getActiveSchoolSet_Sa_();
+      if (!schoolKey || !activeSet.has(schoolKey)) {
+        setStatusCell_Sa_(sh, getHeaderMap_Sa_(sh), row, 'ERROR: Inactive/missing school');
+        logHelper('[Form] School inactive or missing; exit.');
+        return;
+      }
+    }
+
+    // Read submitted row
+    var headerMap = getHeaderMap_Sa_(sh);
+    var values    = sh.getRange(row, 1, 1, last).getValues()[0];
+
+    // Extract fields
+    var token       = readByHeader_Sa_(values, headerMap, 'token');
+    var learnerName = readByHeader_Sa_(values, headerMap, 'learner name');
+    var grade       = readByHeader_Sa_(values, headerMap, 'grade');
+    var cls         = readByHeader_Sa_(values, headerMap, 'class');
+    var incident    = readByHeader_Sa_(values, headerMap, 'incident');
+    var dateStr     = readByHeader_Sa_(values, headerMap, 'timestamp') || readByHeader_Sa_(values, headerMap, 'date');
+
+    // Parent number lookup
+    var parentMsisdn = lookupParentMsisdn_Sa_(schoolKey, token, learnerName);
+    if (!parentMsisdn) {
+      setStatusCell_Sa_(sh, headerMap, row, 'ERROR: No parent mobile');
+      logHelper('[Form] No parent mobile; bail.');
+      return;
+    }
+
+    // Decide delivery mode: row override → per-school → project default
+    var mode = resolveSmsModeForRowOrSchool_Sa_(schoolKey, headerMap, values);
+    logHelper('[Form] Delivery mode=' + mode);
+
+    // Build SMS body
+    var smsBody = formatIncidentSms_Sa_(schoolKey, {
+      learnerName: learnerName,
+      grade: grade,
+      className: cls,
+      incident: incident,
+      dateStr: dateStr
+    });
+
+    if (mode === 'QUEUED') {
+      // Queue to Outbox
+      enqueueOutbox_Sa_(schoolKey, parentMsisdn, smsBody, {
+        source: 'form',
+        mode: 'QUEUED',
+        ssId: ss.getId(),
+        sheet: sh.getName(),
+        row: row,
+        token: token || '',
+        learnerName: learnerName || ''
+      });
+      setStatusCell_Sa_(sh, headerMap, row, 'QUEUED');
+      logHelper('[Form] Queued to Outbox for ' + schoolKey + ' → ' + parentMsisdn);
+      return;
+    }
+
+    // IMMEDIATE path
+    // Still respects DRY_RUN; will not send live if DRY_RUN=true.
+    var cfg = safeGetSmsConfigForSchool_(schoolKey);
+    if (!cfg || !cfg.sendUrl) {
+      setStatusCell_Sa_(sh, headerMap, row, 'ERROR: No SMS config');
+      logHelper('[Form] No SMS config for ' + schoolKey);
+      // Optional: audit ERROR row to Outbox
+      if (LOG_IMMEDIATE_TO_OUTBOX) {
+        enqueueOutboxWithStatus_Sa_('ERROR', 'No config', schoolKey, parentMsisdn, smsBody, {
+          source: 'form',
+          mode: 'IMMEDIATE',
+          ssId: ss.getId(),
+          sheet: sh.getName(),
+          row: row
+        });
+      }
+      return;
+    }
+
+    try {
+      var res = sendSmsSa_(cfg, parentMsisdn, smsBody); // your existing sender (respects DRY_RUN)
+      var msgId = res && res.messageId ? String(res.messageId) : (DRY_RUN ? 'DRY_RUN' : 'OK');
+      setStatusCell_Sa_(sh, headerMap, row, 'SENT');
+
+      if (LOG_IMMEDIATE_TO_OUTBOX) {
+        enqueueOutboxWithStatus_Sa_('SENT', msgId, schoolKey, parentMsisdn, smsBody, {
+          source: 'form',
+          mode: 'IMMEDIATE',
+          ssId: ss.getId(),
+          sheet: sh.getName(),
+          row: row
+        });
+      }
+      logHelper('[Form][IMMEDIATE] Sent to ' + parentMsisdn + ' id=' + msgId);
+    } catch (err) {
+      var msg = handleError_(err, '[Form][IMMEDIATE]');
+      setStatusCell_Sa_(sh, headerMap, row, 'ERROR: ' + msg);
+      if (LOG_IMMEDIATE_TO_OUTBOX) {
+        enqueueOutboxWithStatus_Sa_('ERROR', msg, schoolKey, parentMsisdn, smsBody, {
+          source: 'form',
+          mode: 'IMMEDIATE',
+          ssId: ss.getId(),
+          sheet: sh.getName(),
+          row: row
+        });
+      }
+    }
+  } catch (errOuter) {
+    handleError_(errOuter, 'onIncidentFormSubmit');
+  }
+}
+
+/**
+ * MINIMAL form-submit handler:
+ * - No guards, no config, no schoolKey, no queue.
+ * - Reads the submitted row, looks up phone, builds SMS, sends immediately, updates status.
+ */
+function onIncidentFormSubmit(e) {
+  Logger.log('[MIN] onIncidentFormSubmit (minimal)');
+
+  try {
+    // 1) Get the sheet + submitted row
+    var sheet = e && e.range ? e.range.getSheet() : null;
+    if (!sheet) { Logger.log('[MIN] No sheet on event; abort.'); return; }
+    if (sheet.getName() !== RESPONSES_SHEET_NAME) {
+      Logger.log('[MIN] Wrong sheet "%s" (expecting "%s"); abort.', sheet.getName(), RESPONSES_SHEET_NAME);
+      return;
+    }
+    var rowIndex = e.range.getRow();
+
+    // ✅ NEW: run guards
+    var g = runGuardsOnSubmitSa_(sheet, rowIndex);
+    if (g.blocked) {
+    // Guard already logged and (if applicable) wrote a status message into the row.
+    return;
+    }
+
+    var lastCol  = sheet.getLastColumn();
+    var headers  = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var rowVals  = sheet.getRange(rowIndex, 1, 1, lastCol).getValues()[0];
+
+    // 2) Column indices
+    var iTs      = findHeaderIndex_(headers, ['Timestamp']);
+    var iLearner = findHeaderIndex_(headers, [COMBINED_LEARNER_COLUMN, 'Combined Learner']);
+    var iTeacher = findHeaderIndex_(headers, ['Teacher Surname, Name', 'Teacher', 'Teacher Name']);
+    var iNature1 = findHeaderIndex_(headers, ['Nature of Learner Misconduct', 'Nature of misconduct', 'Nature']);
+    var iNature2 = findHeaderIndex_(headers, ['Other misconduct', 'Description of incident', 'Other / description']);
+    var iSmsCol  = findHeaderIndex_(headers, [SMS_STATUS_COLUMN]);
+
+    // 3) Basic values
+    var learner = iLearner >= 0 ? String(rowVals[iLearner] || '').trim() : '';
+    if (!learner) { Logger.log('[MIN] No learner; abort.'); return; }
+
+    // prevent accidental double-sends if status says Sent already
+    if (iSmsCol >= 0) {
+      var current = String(rowVals[iSmsCol] || '').toLowerCase();
+      if (current.indexOf('sent') !== -1) { Logger.log('[MIN] Already sent; abort.'); return; }
+    }
+
+    var teacher = iTeacher >= 0 ? String(rowVals[iTeacher] || '').trim() : '';
+    var n1 = iNature1 >= 0 ? String(rowVals[iNature1] || '').trim() : '';
+    var n2 = iNature2 >= 0 ? String(rowVals[iNature2] || '').trim() : '';
+    var nature = [n1, n2].filter(Boolean).join(' — ');
+
+    var dateStr = iTs >= 0
+      ? Utilities.formatDate(new Date(rowVals[iTs]), Session.getScriptTimeZone() || 'Africa/Johannesburg', 'yyyy-MM-dd')
+      : Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Africa/Johannesburg', 'yyyy-MM-dd');
+
+    // 4) Phone + parent portal link (use the same workbook that fired the event)
+    var contactsBookUrl = (e && e.source && e.source.getUrl) ? e.source.getUrl() : '';
+    var info = getParentPortalLinkAndPhoneForLearner_(learner, contactsBookUrl);
+    Logger.log('[MIN] Parent portal lookup: ' + JSON.stringify({
+      ok: info.ok, phone: info.phone ? '(present)' : '(missing)',
+      urlMasked: (function(u){ try { return (u||'').replace(/(tok=)[^&]+/,'$1***'); } catch(_){ return ''; } })(info.longUrl || info.urlToSend || info.shortUrl || '')
+    }));
+
+    if (!info.ok || !info.phone || info.phone.charAt(0) !== '+') {
+      Logger.log('[MIN] Missing/invalid phone or portal link. Not sending.');
+      if (iSmsCol >= 0) sheet.getRange(rowIndex, iSmsCol + 1).setValue('FAILED: No valid phone/link');
+      return;
+    }
+
+    var portalLink = (info.urlToSend || info.longUrl || info.shortUrl) || '';
+    var msg = buildIncidentSmsMessage_(learner, dateStr, teacher, nature, portalLink, MAX_SMS_LEN);
+
+    // 5) SEND IMMEDIATELY (no DRY_RUN guard here by design)
+    var ok = false;
+    try {
+      ok = sendSmsViaSmsSouthAfrica(info.phone, msg);
+    } catch (sendErr) {
+      Logger.log('[MIN] sendSmsViaSmsSouthAfrica threw: ' + sendErr);
+      ok = false;
+    }
+
+    // 6) Update status cell
+    if (iSmsCol >= 0) {
+      sheet.getRange(rowIndex, iSmsCol + 1).setValue(ok ? 'Sent' : 'FAILED: Gateway error');
+    }
+    Logger.log('[MIN] Done. Sent=' + ok);
+
+  } catch (err) {
+    Logger.log('[MIN] Fatal error: ' + (err && err.message ? err.message : err));
+  }
+}
+
 
 // ------------------------------------------
 // ⚙️ Script Triggers management for deployments
@@ -2186,7 +2514,7 @@ function __ping__() {
  * Install the onFormSubmit trigger on the **Data Sheet** workbook
  * (the same place where "Form Responses 1" and "Learner Contacts" live).
  */
-function installIncidentSubmitTrigger_() {
+function installIncidentSubmitTrigger() {
   const ctx = getUserContext_();
   const sheetUrl = ctx.dataSheetUrl || CONFIG_SHEET_URL; // fallback just in case
   const ssId = parseSpreadsheetId_(sheetUrl);
@@ -2341,66 +2669,6 @@ function __sheetUrlFromId_(id) {
   return 'https://docs.google.com/spreadsheets/d/' + id + '/edit';
 }
 
-// Try to deduce the school's Primary workbook, preferring the Incident Form response sheet
-/*function resolvePrimaryDataSheetUrl_(ctx) {
-  try {
-    // 1) If ctx.dataSheetUrl is already a Sheets URL (and not just the CONFIG)
-    if (ctx && ctx.dataSheetUrl && /https:\/\/docs\.google\.com\/spreadsheets\/d\//.test(ctx.dataSheetUrl)
-        && ctx.dataSheetUrl !== CONFIG_SHEET_URL) {
-      Logger.log('[PrimaryResolve] Using ctx.dataSheetUrl as primary: ' + ctx.dataSheetUrl);
-      return ctx.dataSheetUrl;
-    }
-
-    // 2) Try Incident Form → destination spreadsheet
-    var formUrl = (ctx && ctx.incidentFormUrl) || INCIDENT_FORM_URL;
-    if (formUrl) {
-      try {
-        var form = FormApp.openByUrl(formUrl);
-        var destId = form.getDestinationId && form.getDestinationId();
-        if (destId) {
-          var u = __sheetUrlFromId_(destId);
-          Logger.log('[PrimaryResolve] From Incident Form destination: ' + u);
-          return u;
-        }
-      } catch (e1) {
-        Logger.log('[PrimaryResolve] Form resolve failed: ' + (e1 && e1.message ? e1.message : e1));
-      }
-    }
-
-    // 3) (Optional) fallback: keep whatever is in ctx (may be CONFIG)
-    Logger.log('[PrimaryResolve] Fallback to existing ctx.dataSheetUrl: ' + (ctx && ctx.dataSheetUrl));
-    return (ctx && ctx.dataSheetUrl) || '';
-  } catch (e) {
-    Logger.log('[PrimaryResolve] error: ' + (e && e.message ? e.message : e));
-    return (ctx && ctx.dataSheetUrl) || '';
-  }
-}*/
-
-// Find the Staff sheet by exact name, case/space variant, or by Email+Role headers
-/*function __findStaffSheet_(ss) {
-  var sh = ss.getSheetByName(STAFF_SHEET_NAME);
-  if (sh) return sh;
-
-  var wanted = String(STAFF_SHEET_NAME || 'Staff').toLowerCase().trim();
-  var all = ss.getSheets();
-  for (var i = 0; i < all.length; i++) {
-    var n = String(all[i].getName() || '').toLowerCase().trim();
-    if (n === wanted) return all[i];
-    if (n.replace(/\s+/g,'') === wanted.replace(/\s+/g,'')) return all[i];
-  }
-  for (var j = 0; j < all.length; j++) {
-    var s = all[j];
-    try {
-      var vals = s.getDataRange().getValues();
-      if (!vals || vals.length < 1) continue;
-      var h = vals[0];
-      var iEmail = findHeaderIndex_(h, ['Email','Staff Email','User Email']);
-      var iRole  = findHeaderIndex_(h, ['Role','Staff Role','Permission']);
-      if (iEmail >= 0 && iRole >= 0) return s;
-    } catch (_) {}
-  }
-  return null;
-}*/
 
 // Very safe role normalizer (only used if you don't already have normalizeRole_)
 function normalizeRole_(v) {
