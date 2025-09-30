@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- somewhere in your header -->
+    <span class="kbd" id="schoolPill"><?!= (ctx && ctx.selectedSchoolKey) || '(dev)' ?></span>
+    <style>
+      :root {
+        --bg: #f6f7fb;
+        --card: #ffffff;
+        --ink: #111827;
+        --muted: #6b7280;
+        --accent: #2563eb;
+        --accent-ink: #ffffff;
+        --ok: #10b981;
+        --warn: #f59e0b;
+        --err: #ef4444;
+        --ring: rgba(37, 99, 235, 0.35);
+      }
+      html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,'Helvetica Neue','Noto Sans','Apple Color Emoji','Segoe UI Emoji',sans-serif}
+      .wrap{max-width:1100px;margin:28px auto;padding:0 16px}
+      .card{background:var(--card);border-radius:16px;box-shadow:0 6px 24px rgba(0,0,0,.06);padding:24px}
+      h1{font-size:28px;margin:0 0 6px}
+      .sub{color:var(--muted);margin:0 0 24px}
+      .row{display:flex;gap:16px;flex-wrap:wrap;margin:0 0 16px}
+      .field{flex:1;min-width:240px}
+      label{display:block;font-size:13px;color:var(--muted);margin:0 0 6px}
+      input[type="month"],select{width:100%;box-sizing:border-box;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;font-size:14px;background:#fff;color:var(--ink);outline:0}
+      input[type="month"]:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 4px var(--ring)}
+      .btns{display:flex;gap:12px;flex-wrap:wrap}
+      .btn{appearance:none;border:0;border-radius:999px;padding:10px 16px;font-size:14px;cursor:pointer;background:#e5e7eb;color:#111827;transition:transform .02s ease, filter .1s ease, background .1s ease}
+      .btn:hover{filter:brightness(0.97)}
+      .btn:active{transform:translateY(1px)}
+      .btn.primary{background:var(--accent);color:var(--accent-ink)}
+      .btn.good{background:var(--ok);color:#fff}
+      .btn.warn{background:var(--warn);color:#111}
+      .btn:disabled{opacity:.55;cursor:not-allowed;filter:none}
+      .status{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;background:#0b0f19;color:#d1fae5;border-radius:12px;padding:16px;white-space:pre-wrap;line-height:1.35;overflow:auto}
+      .kbd{padding:2px 8px;border-radius:999px;background:#eef2ff;color:#3730a3;font-weight:600}
+      .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#f3f4f6;color:#374151;font-size:13px}
+      .spacer{height:6px}
+      .dim{color:var(--muted)}
+      .topline{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+      .busy{display:none;margin:10px 0;padding:10px 12px;border-radius:10px;background:#111827;color:#e5e7eb;font-size:14px}
+      .busy.show{display:block}
+      .link{color:var(--accent);text-decoration:none}
+      .link:hover{text-decoration:underline}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <div class="topline">
+  <div>
+    <h1>Admin SMS Console <span class="dim">– hidden route</span></h1>
+    <p class="sub">Backfill and summarize SMS usage per school. All actions are DRY-RUN aware.</p>
+  </div>
+
+  <div class="pill" style="gap:10px">
+    <span class="dim">School:</span>
+    <span class="kbd" id="schoolPill"><?!= (ctx && ctx.selectedSchoolKey) || '(dev)' ?></span>
+    <span class="spacer"></span>
+    <span class="dim">Version:</span>
+    <span id="ver" class="kbd">dev</span>
+  </div>
+</div>
+
+
+        <div class="row">
+          <div class="field">
+            <label for="singleMonth">Single Month (YYYY-MM)</label>
+            <input id="singleMonth" type="month">
+          </div>
+        </div>
+        <div class="btns" style="margin-bottom:18px">
+          <button id="btnBackfillSingle" class="btn primary">Backfill Single Month</button>
+          <button id="btnSummary" class="btn good">Get Current Month Summary</button>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="rangeFrom">Range (YYYY-MM → YYYY-MM)</label>
+            <div class="row" style="gap:10px">
+              <input id="rangeFrom" type="month" style="min-width:160px;flex:0 0 180px">
+              <input id="rangeTo" type="month" style="min-width:160px;flex:0 0 180px">
+            </div>
+          </div>
+        </div>
+        <div class="btns" style="margin-bottom:6px">
+          <button id="btnBackfillRange" class="btn warn">Backfill Range</button>
+        </div>
+
+        <div id="busy" class="busy">Please wait …</div>
+        <div id="out" class="status">Ready.</div>
+      </div>
+    </div>
+
+<script>
+  const ctx = <?!= JSON.stringify(ctx || {}) ?>;
+
+  // No school selection: always use the resolved school from ctx
+  function schoolKey(){
+    return (ctx && ctx.selectedSchoolKey) || '';
+  }
+
+  // Small UI helpers
+  function busy(on, msg) {
+    const b = document.getElementById('busy');
+    const btns = document.querySelectorAll('button');
+    btns.forEach(x => x.disabled = !!on);
+    if (b) { b.style.display = on ? 'block' : 'none'; b.textContent = msg || 'Please wait …'; }
+  }
+  function show(msg, ok=true){
+    const out = document.getElementById('out');
+    if (!out) return;
+    out.style.color = ok ? '#bbf7d0' : '#fecaca';
+    out.textContent = (msg == null || msg === '') ? '(no data)' : String(msg);
+  }
+
+  // Init: version pill + sensible defaults for month inputs
+  (function init(){
+    // version
+    var verEl = document.getElementById('ver');
+    if (verEl) {
+      var v = ctx && ctx.codeVersion ? ('v' + ctx.codeVersion)
+            : (ctx && ctx.projectScriptId ? (ctx.projectScriptId.slice(0,8) + '…')
+            : 'dev');
+      verEl.textContent = v;
+    }
+    // months
+    var currentYm = (ctx && ctx.currentYm) || new Date().toISOString().slice(0,7);
+    var sm = document.getElementById('singleMonth');
+    var rf = document.getElementById('rangeFrom');
+    var rt = document.getElementById('rangeTo');
+    if (sm && !sm.value) sm.value = currentYm;
+    if (rf && !rf.value) rf.value = currentYm;
+    if (rt && !rt.value) rt.value = currentYm;
+  })();
+
+  // Backfill single month
+  document.getElementById('btnBackfillSingle').onclick = function(){
+    const key = schoolKey();
+    const ym = (document.getElementById('singleMonth').value || '').trim();
+    if (!key) return show('No school resolved for this session.', false);
+    if (!/^\d{4}-\d{2}$/.test(ym)) return show('Enter month as YYYY-MM.', false);
+
+    busy(true, 'Backfilling single month …');
+    google.script.run
+      .withSuccessHandler(res => { busy(false); show((res && res.message) || JSON.stringify(res), true); })
+      .withFailureHandler(err => { busy(false); show(err && err.message ? err.message : String(err), false); })
+      .adminSms_backfillSingleMonth({ schoolKey:key, ym:ym });
+  };
+
+  // Backfill range
+  document.getElementById('btnBackfillRange').onclick = function(){
+    const key = schoolKey();
+    const fromYm = (document.getElementById('rangeFrom').value || '').trim();
+    const toYm   = (document.getElementById('rangeTo').value   || '').trim();
+    if (!key) return show('No school resolved for this session.', false);
+
+    busy(true, 'Backfilling range …');
+    google.script.run
+      .withSuccessHandler(res => { busy(false); show((res && res.message) || JSON.stringify(res), true); })
+      .withFailureHandler(err => { busy(false); show(err && err.message ? err.message : String(err), false); })
+      .adminSms_backfillRange({ schoolKey:key, fromYm:fromYm, toYm:toYm });
+  };
+
+  // Current month summary
+  document.getElementById('btnSummary').onclick = function(){
+    const key = schoolKey();
+    if (!key) return show('No school resolved for this session.', false);
+
+    busy(true, 'Summarizing current month …');
+    google.script.run
+      .withSuccessHandler(res => { busy(false); show((res && res.message) || JSON.stringify(res), true); })
+      .withFailureHandler(err => { busy(false); show(err && err.message ? err.message : String(err), false); })
+      .adminSms_getCurrentMonthSummary({ schoolKey:key });
+  };
+</script>
+
+  </body>
+</html>
