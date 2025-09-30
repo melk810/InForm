@@ -300,3 +300,50 @@ function getHeaderMap_Sa_(sheet, requiredHeaders) {
     raw: map
   };
 }
+
+// Fallback admin guard used by the adminSms route.
+// Works even if ctx.school is missing by reading the Schools map directly.
+function enforceAdminGuardLite_(ctx) {
+  // 0) If your role already indicates elevated access, allow fast.
+  var role = (ctx && ctx.role) ? String(ctx.role).toLowerCase().trim() : '';
+  if (role === 'admin' || role === 'manager' || role === 'owner') return;
+
+  // 1) Current user email
+  var email = (Session.getActiveUser().getEmail() || '').toLowerCase().trim();
+
+  // 2) Get the school record:
+  //    Prefer ctx.school if present; otherwise read from Config→Schools via readSchoolsMapFromConfig_()
+  var schoolObj = null;
+  if (ctx && ctx.school) {
+    schoolObj = ctx.school; // your ctx contains the full row
+  } else {
+    if (typeof readSchoolsMapFromConfig_ !== 'function') {
+      throw new Error('Admin guard: readSchoolsMapFromConfig_ missing');
+    }
+    var key = (ctx && ctx.selectedSchoolKey) ? String(ctx.selectedSchoolKey).trim() : '';
+    if (!key) {
+      // optional fallback to Script Property DEFAULT_SCHOOL_KEY
+      var dkey = PropertiesService.getScriptProperties().getProperty('DEFAULT_SCHOOL_KEY');
+      if (dkey) key = String(dkey).trim();
+    }
+    if (!key) throw new Error('Admin guard: no school key resolved');
+    var map = readSchoolsMapFromConfig_(); // Map<key, object>
+    schoolObj = map && map.get ? map.get(key) : null;
+  }
+  if (!schoolObj) throw new Error('Admin guard: school row not found');
+
+  // 3) Read both headers robustly (support header variants)
+  var adminField  = String(schoolObj['adminEmail']   || schoolObj['Admin Email']   || '').toLowerCase();
+  var domainField = String(schoolObj['Email Domain'] || schoolObj['emailDomain'] || '').toLowerCase();
+
+  // Note: "Email Domain" must be like "gmail.com", not a full email.
+  // If you put an email there, it won't match; adminEmail still works.
+
+  var adminList = adminField.split(/[;,]/).map(function(s){ return s.trim(); }).filter(Boolean);
+  var domainOk = (domainField && !/@/.test(domainField)) ? email.endsWith('@' + domainField) : false;
+
+  var allowed = (adminList.length && adminList.indexOf(email) !== -1) || domainOk;
+  if (!allowed) {
+    throw new Error('Not authorized. Add your email to "adminEmail" on the DOORN1 row (Config → Schools) or set "Email Domain" to a domain like "gmail.com".');
+  }
+}
