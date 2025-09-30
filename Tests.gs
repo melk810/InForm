@@ -489,3 +489,10 @@ function _seedTestQueuedOutboxRow() {
   ]);
   Logger.log('[Seed] Added QUEUED row.');
 }
+
+function test__constants() {
+  Logger.log('RESPONSES_SHEET_NAME=%s', RESPONSES_SHEET_NAME);
+  Logger.log('SMS_STATUS_COLUMN=%s',    SMS_STATUS_COLUMN);
+  Logger.log('USAGE_SHEET_NAME=%s',     USAGE_SHEET_NAME);
+  Logger.log('SENT_VALUES=%s',          (SENT_VALUES || []).join(', '));
+}
