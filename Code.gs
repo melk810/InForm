@@ -635,6 +635,40 @@ if ((page === 'home' || page === 'incidents' || page === 'report' || page === 'c
 }
 
 // ──────────────────────────────────────────────────────────────
+// 6.5) Hidden admin route: ?page=adminSms (needs ctx + admin guard)
+// ──────────────────────────────────────────────────────────────
+if (page === 'adminsms') {
+  // Reuse your existing admin guard if present; else use the lite one below
+  try {
+    (typeof enforceAdminGuard_ === 'function' ? enforceAdminGuard_ : enforceAdminGuardLite_)(ctx);
+  } catch (guardErr) {
+    // Render a simple, clear error (no redirect); keeps router flow safe
+    const msg = String(guardErr && guardErr.message ? guardErr.message : guardErr);
+    const html = `
+      <!doctype html><html><head><meta charset="utf-8"/>
+      <meta name="viewport" content="width=device-width, initial-scale=1"/>
+      <title>Not authorized</title>
+      <style>body{font-family:Arial;padding:24px;color:#333}</style>
+      </head><body>
+        <h2>🚫 Not authorized</h2>
+        <p>${msg.replace(/</g,'&lt;')}</p>
+      </body></html>`;
+    return HtmlService.createHtmlOutput(html)
+      .setTitle('InForm – Admin SMS')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+
+  // Render AdminSms.html directly (keeps your renderPage_ untouched)
+  const t = HtmlService.createTemplateFromFile('AdminSms');
+  t.ctx = ctx;  // pass full ctx (selectedSchoolKey, scriptUrl, etc.)
+  const out = t.evaluate();
+  // keep your title handling style consistent with Incidents fallback:
+  var m = out.getContent().match(/<title>([^<]*)<\/title>/i);
+  out.setTitle(m ? m[1] : 'InForm – Admin SMS');
+  return out.setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+// ──────────────────────────────────────────────────────────────
 // 7) Staff routes (need ctx)
 // ──────────────────────────────────────────────────────────────
 if (page === 'incidents') {
@@ -1522,9 +1556,9 @@ function buildIncidentSmsMessage_(learner, dateStr, teacher, nature, parentPorta
   var teacherShort = _shortSurnameInitialLocal(teacherRaw);   // e.g., "KROUKAMP E."
 
   // --- compose lines (GSM-7 friendly)
-  var headerLine = 'DHS Incident - ' + learnerShort + ' ' + (dateStr || '');
-  var tLine = teacherShort ? ('T:' + teacherShort + '.') : '';
-  var nLine = nature ? ('N:' + String(nature).trim() + '.') : '';
+  var headerLine = '' + learnerShort + ' ' + (dateStr || '');
+  var tLine = teacherShort ? ('reported by' + teacherShort + '.') : '';
+  var nLine = nature ? ('for' + String(nature).trim() + '.') : '';
 
   // Ack link toggle: respect SEND_ACK_LINK if you use it; otherwise include when link is present
   var includeAck = (typeof SEND_ACK_LINK === 'undefined') ? true : !!SEND_ACK_LINK;
@@ -2102,7 +2136,7 @@ function getParentPortalLinkAndPhoneForLearner_(learnerName, contactsBookUrl) {
   return { ok: false, reason: 'Learner Contacts sheet not found' };
 }
 
-// ========================================
+/*// ========================================
 // 🚨 AUTO SMS ON FORM SUBMIT HANDLER & TRIGGER
 // IMPORTANT: The handler name must match the trigger!
 function onIncidentFormSubmit_BACKUP(e) {
@@ -2277,7 +2311,7 @@ function onIncidentFormSubmit_BACKUP(e) {
  * Installable trigger: From spreadsheet → On form submit
  * One trigger per school Responses spreadsheet pointing to THIS project.
  */
-function onIncidentFormSubmit_BACKUPQUEUE(e) {
+/*function onIncidentFormSubmit_BACKUPQUEUE(e) {
   try {
     logHelper('onIncidentFormSubmit triggered');
 
@@ -2408,7 +2442,7 @@ function onIncidentFormSubmit_BACKUPQUEUE(e) {
   } catch (errOuter) {
     handleError_(errOuter, 'onIncidentFormSubmit');
   }
-}
+}*/
 
 /**
  * MINIMAL form-submit handler:
@@ -2483,20 +2517,39 @@ function onIncidentFormSubmit(e) {
     var portalLink = (info.urlToSend || info.longUrl || info.shortUrl) || '';
     var msg = buildIncidentSmsMessage_(learner, dateStr, teacher, nature, portalLink, MAX_SMS_LEN);
 
-    // 5) SEND IMMEDIATELY (no DRY_RUN guard here by design)
+    /*// 5) SEND IMMEDIATELY (no DRY_RUN guard here by design)
     var ok = false;
     try {
-      ok = sendSmsViaSmsSouthAfrica(info.phone, msg);
+      ok = sendSmsViaSmsSouthAfrica(info.phone, msg);     //This is the actual send.
     } catch (sendErr) {
       Logger.log('[MIN] sendSmsViaSmsSouthAfrica threw: ' + sendErr);
       ok = false;
-    }
+    }*/
 
-    // 6) Update status cell
+    // 5) SEND via wrapper (personalises + counts + thresholds; respects DRY_RUN)
+var ok = false, res = null;
+try {
+  var ctx = loadCtx_({}); // keeps selectedSchoolKey from URL if present
+  res = sendSchoolSMS_(ctx, info.phone, msg);
+  ok = !!(res && res.ok);
+} catch (sendErr) {
+  Logger.log('[MIN] sendSchoolSMS_ threw: ' + (sendErr && sendErr.message ? sendErr.message : sendErr));
+  ok = false;
+}
+
+// 6) Update status cell (show DRY_RUN clearly)
+if (iSmsCol >= 0) {
+  var status = ok ? (res && res.dryRun ? 'Sent (DRY_RUN)' : 'Sent') : 'FAILED: Gateway error';
+  sheet.getRange(rowIndex, iSmsCol + 1).setValue(status);
+}
+Logger.log('[MIN] Done. Sent=' + ok + (res && res.dryRun ? ' (DRY_RUN)' : ''));
+
+
+    /*// 6) Update status cell
     if (iSmsCol >= 0) {
       sheet.getRange(rowIndex, iSmsCol + 1).setValue(ok ? 'Sent' : 'FAILED: Gateway error');
     }
-    Logger.log('[MIN] Done. Sent=' + ok);
+    Logger.log('[MIN] Done. Sent=' + ok);*/
 
   } catch (err) {
     Logger.log('[MIN] Fatal error: ' + (err && err.message ? err.message : err));
@@ -2623,16 +2676,35 @@ function sendUnsentSMSToday() {
       const msg = buildIncidentSmsMessage_(learner, dateStr, teacher, nature, parentPortalLink, MAX_SMS_LEN);
 
       Logger.log(`Sending SMS for row ${r + 1}: ` + msg.replace(parentPortalLink, maskUrlToken_(parentPortalLink)));
-      const ok = sendSmsViaSmsSouthAfrica(info.phone, msg);
-      if (ok && iSmsCol >= 0) {
-        sheet.getRange(r + 1, iSmsCol + 1).setValue(STATUS_SENT);
-        sent++;
-        Logger.log(`SMS sent successfully for row ${r + 1}`);
-      } else if (iSmsCol >= 0) {
-        sheet.getRange(r + 1, iSmsCol + 1).setValue(STATUS_FAILED_PREFIX + 'Gateway error');
-        failed++;
-        Logger.log(`Failed to send SMS for row ${r + 1}`);
-      }
+      
+    // Use existing ctx if this function already has it; otherwise load it.
+    var _ctx = (typeof ctx !== 'undefined' && ctx) ? ctx : loadCtx_({});
+
+    // Send via wrapper: personalises + counts quota (+ DRY_RUN labeling)
+    var res = null, ok = false;
+    try {
+    res = sendSchoolSMS_(_ctx, info.phone, msg);
+    ok = !!(res && res.ok);
+    } catch (e) {
+    Logger.log('[QueueSend] sendSchoolSMS_ error: ' + (e && e.message ? e.message : e));
+    ok = false;
+    }
+
+    // Write status exactly like before, but show DRY_RUN if active
+    if (iSmsCol >= 0) {
+    if (ok) {
+    var statusVal = (res && res.dryRun) ? 'Sent (DRY_RUN)' : STATUS_SENT;
+    sheet.getRange(r + 1, iSmsCol + 1).setValue(statusVal);
+    sent++;
+    Logger.log(`SMS ${res && res.dryRun ? 'DRY_RUN ' : ''}sent successfully for row ${r + 1}`);
+    } else {
+    sheet.getRange(r + 1, iSmsCol + 1).setValue(STATUS_FAILED_PREFIX + 'Gateway error');
+    failed++;
+    Logger.log(`Failed to send SMS for row ${r + 1}`);
+    }
+}
+
+      
     }
 
     SpreadsheetApp.getUi().alert(`SMS sending complete: ${sent} sent, ${failed} failed.`);
@@ -4250,4 +4322,48 @@ function getIncidentsSummaryForUi(opts) {
     var dd = _toInt(opts && opts.days, 30);
     return { days: dd, totalInWindow: 0, today: 0, last7: 0, ytdTotal: 0, topSubjects: [], topLearners: [], topNatures: [], byGrade: [] };
   }
+}
+
+// === Admin SMS RPCs (tiny wrappers) ===
+function adminSms_backfillSingleMonth(req) {
+  var key = req && req.schoolKey;
+  var ym  = req && req.ym;
+  if (!key) throw new Error('Select a school first.');
+  if (!/^\d{4}-\d{2}$/.test(ym || '')) throw new Error('Month must be YYYY-MM.');
+
+  // Use your existing single-month backfill (you said you added this entrypoint):
+  // backfillSmsUsageForMonthForSchool_(key, ym) should write/update "SMS Usage" and return {total, months:1}
+  var res = backfillSmsUsageForMonthForSchool_(key, ym);
+  return { ok:true, message: `[Backfill Single] ${key} @ ${ym} → ${res.total||0} SMS.` };
+}
+
+function adminSms_backfillRange(req) {
+  var key = req && req.schoolKey;
+  var fromYm = req && req.fromYm, toYm = req && req.toYm;
+  if (!key) throw new Error('Select a school first.');
+  if (!/^\d{4}-\d{2}$/.test(fromYm||'') || !/^\d{4}-\d{2}$/.test(toYm||'')) throw new Error('Range must be YYYY-MM.');
+  if (fromYm > toYm) throw new Error('From > To.');
+
+  var total = 0, months = 0;
+  var y = +fromYm.slice(0,4), m = +fromYm.slice(5);
+  var Y2 = +toYm.slice(0,4), M2 = +toYm.slice(5);
+  while (y < Y2 || (y === Y2 && m <= M2)) {
+    var ym = y + '-' + ('0' + m).slice(-2);
+    var r = backfillSmsUsageForMonthForSchool_(key, ym); // reuse your single-month entrypoint
+    total += (r && r.total) ? r.total : 0;
+    months++;
+    m++; if (m === 13) { m = 1; y++; }
+  }
+  return { ok:true, message: `[Backfill Range] ${key} @ ${fromYm}..${toYm} → ${total} total SMS across ${months} month(s).` };
+}
+
+// Called by AdminSms.html → Summary button
+function adminSms_getCurrentMonthSummary(req) {
+  var key = (req && req.schoolKey) || (PropertiesService.getScriptProperties().getProperty('DEFAULT_SCHOOL_KEY') || '').trim();
+  if (!key) throw new Error('No school resolved.');
+
+  var s = getSmsUsageSummaryForSchool(key); // your existing function
+  // Show something sensible regardless of shape:
+  var msg = (s && s.message) ? s.message : ('Summary for ' + key + ': ' + JSON.stringify(s));
+  return { ok: true, message: msg };
 }
